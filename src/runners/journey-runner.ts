@@ -1,0 +1,71 @@
+import * as fs from 'fs';
+import * as path from 'path';
+import { Page, expect } from '@playwright/test';
+import type { Journey, Action } from '../config/journeys';
+
+const SCREENSHOT_DIR = 'reports/screenshots';
+
+async function executeStep(page: Page, action: Action): Promise<void> {
+  switch (action.kind) {
+    case 'click':
+      await page.locator(action.selector).click();
+      break;
+
+    case 'fill':
+      await page.locator(action.selector).fill(action.value);
+      break;
+
+    case 'select':
+      await page.locator(action.selector).selectOption({ label: action.label });
+      break;
+
+    case 'waitFor':
+      await page.locator(action.selector).waitFor({
+        state: action.state,
+        timeout: action.timeoutMs,
+      });
+      break;
+
+    case 'assertVisible':
+      await expect(page.locator(action.selector)).toBeVisible();
+      break;
+
+    case 'assertHidden':
+      await expect(page.locator(action.selector)).toBeHidden();
+      break;
+
+    case 'assertText':
+      await expect(page.locator(action.selector)).toContainText(action.contains);
+      break;
+  }
+}
+
+export async function runJourney(journey: Journey, page: Page): Promise<void> {
+  fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
+
+  for (let i = 0; i < journey.steps.length; i++) {
+    const step = journey.steps[i];
+    const stepLabel = `[${i + 1}/${journey.steps.length}] ${step.description}`;
+
+    console.log(`  → ${stepLabel}`);
+
+    try {
+      await executeStep(page, step.action);
+    } catch (err) {
+      const filename = `${journey.id}-step-${String(i + 1).padStart(2, '0')}.png`;
+      const screenshotPath = path.join(SCREENSHOT_DIR, filename);
+
+      try {
+        await page.screenshot({ path: screenshotPath, fullPage: false });
+        console.error(`  ✗ Step failed — screenshot saved to ${screenshotPath}`);
+      } catch {
+        // Don't mask the original error if the screenshot itself fails
+      }
+
+      const original = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `[${journey.id}] Step ${i + 1} failed — "${step.description}"\n${original}`,
+      );
+    }
+  }
+}
