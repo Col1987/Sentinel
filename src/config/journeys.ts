@@ -55,6 +55,54 @@ const ASSERT_NO_SUCCESS: JourneyStep = {
   action: { kind: 'assertVisible', selector: '#demo-submit-btn' },
 };
 
+// ─── Registration form shared steps ──────────────────────────────────────────
+
+const OPEN_REGISTER_MODAL: JourneyStep[] = [
+  {
+    description: 'Click Login button to open the login modal',
+    action: { kind: 'click', selector: '#btn-login' },
+  },
+  {
+    description: 'Wait for login modal to appear',
+    action: { kind: 'waitFor', selector: '#login-email', state: 'visible' },
+  },
+  {
+    description: 'Click Register link to switch to registration form',
+    action: { kind: 'click', selector: 'a:has-text("Register")' },
+  },
+  {
+    description: 'Wait for registration form to appear',
+    action: { kind: 'waitFor', selector: '#reg-firstname', state: 'visible' },
+  },
+];
+
+// Standard valid test data — all fields populated with non-real values
+const FILL_REG_VALID: JourneyStep[] = [
+  { description: 'Fill first name', action: { kind: 'fill', selector: '#reg-firstname', value: 'Sentinel' } },
+  { description: 'Fill last name',  action: { kind: 'fill', selector: '#reg-lastname',  value: 'Test' } },
+  { description: 'Fill email',      action: { kind: 'fill', selector: '#reg-email',     value: 'sentinel-test@sentinel.dev' } },
+  { description: 'Fill mobile number', action: { kind: 'fill', selector: '#reg-mobile-num', value: '821234567' } },
+  { description: 'Fill password',         action: { kind: 'fill', selector: '#reg-password',         value: 'Test@12345!' } },
+  { description: 'Fill confirm password', action: { kind: 'fill', selector: '#reg-confirm-password', value: 'Test@12345!' } },
+];
+
+const CHECK_TERMS: JourneyStep = {
+  description: 'Check the terms and conditions checkbox',
+  action: { kind: 'click', selector: '#reg-terms' },
+};
+
+const CLICK_CREATE_ACCOUNT: JourneyStep = {
+  description: 'Click Create Account button',
+  action: { kind: 'click', selector: 'button:has-text("Create Account")' },
+};
+
+const ASSERT_REG_BLOCKED: JourneyStep = {
+  description: 'Assert Create Account button is still visible — submission was blocked',
+  action: { kind: 'assertVisible', selector: 'button:has-text("Create Account")' },
+};
+
+// ─── Journeys ────────────────────────────────────────────────────────────────
+
 export const journeys: Journey[] = [
   {
     id: 'demo-happy-path',
@@ -149,6 +197,112 @@ export const journeys: Journey[] = [
       // honours the disabled state or uses a separate flag determines if a second request fires.
       { description: 'Second click on submit (forced — bypasses disabled state)', action: { kind: 'click', selector: '#demo-submit-btn', force: true } },
       ASSERT_SUCCESS,
+    ],
+  },
+
+  // ─── Registration form journeys ─────────────────────────────────────────────
+
+  {
+    id: 'reg-empty-submit',
+    description: 'Registration form — all fields empty, submit should be blocked by validation',
+    steps: [
+      ...OPEN_REGISTER_MODAL,
+      CLICK_CREATE_ACCOUNT,
+      ASSERT_REG_BLOCKED,
+    ],
+  },
+  {
+    id: 'reg-password-mismatch',
+    description: 'Registration form — confirm password differs from password, must be rejected',
+    steps: [
+      ...OPEN_REGISTER_MODAL,
+      { description: 'Fill first name', action: { kind: 'fill', selector: '#reg-firstname', value: 'Sentinel' } },
+      { description: 'Fill last name',  action: { kind: 'fill', selector: '#reg-lastname',  value: 'Test' } },
+      { description: 'Fill email',      action: { kind: 'fill', selector: '#reg-email',     value: 'sentinel-test@sentinel.dev' } },
+      { description: 'Fill mobile number', action: { kind: 'fill', selector: '#reg-mobile-num', value: '821234567' } },
+      { description: 'Fill password',                           action: { kind: 'fill', selector: '#reg-password',         value: 'Test@12345' } },
+      { description: 'Fill confirm password with different value', action: { kind: 'fill', selector: '#reg-confirm-password', value: 'Different@99' } },
+      CHECK_TERMS,
+      CLICK_CREATE_ACCOUNT,
+      ASSERT_REG_BLOCKED,
+    ],
+  },
+  {
+    id: 'reg-weak-password',
+    description: 'Registration form — password "123" should fail strength validation or backend minimum-length check',
+    steps: [
+      ...OPEN_REGISTER_MODAL,
+      { description: 'Fill first name', action: { kind: 'fill', selector: '#reg-firstname', value: 'Sentinel' } },
+      { description: 'Fill last name',  action: { kind: 'fill', selector: '#reg-lastname',  value: 'Test' } },
+      { description: 'Fill email',      action: { kind: 'fill', selector: '#reg-email',     value: 'sentinel-test@sentinel.dev' } },
+      { description: 'Fill mobile number', action: { kind: 'fill', selector: '#reg-mobile-num', value: '821234567' } },
+      { description: 'Fill weak password "123"',          action: { kind: 'fill', selector: '#reg-password',         value: '123' } },
+      { description: 'Fill confirm with same weak value', action: { kind: 'fill', selector: '#reg-confirm-password', value: '123' } },
+      CHECK_TERMS,
+      CLICK_CREATE_ACCOUNT,
+      ASSERT_REG_BLOCKED,
+    ],
+  },
+  {
+    id: 'reg-invalid-email',
+    description: 'Registration form — non-email string should be rejected by input type="email" validation',
+    steps: [
+      ...OPEN_REGISTER_MODAL,
+      { description: 'Fill first name', action: { kind: 'fill', selector: '#reg-firstname', value: 'Sentinel' } },
+      { description: 'Fill last name',  action: { kind: 'fill', selector: '#reg-lastname',  value: 'Test' } },
+      { description: 'Fill non-email string in email field', action: { kind: 'fill', selector: '#reg-email', value: 'notanemail' } },
+      { description: 'Fill mobile number', action: { kind: 'fill', selector: '#reg-mobile-num', value: '821234567' } },
+      { description: 'Fill password',         action: { kind: 'fill', selector: '#reg-password',         value: 'Test@12345!' } },
+      { description: 'Fill confirm password', action: { kind: 'fill', selector: '#reg-confirm-password', value: 'Test@12345!' } },
+      CHECK_TERMS,
+      CLICK_CREATE_ACCOUNT,
+      ASSERT_REG_BLOCKED,
+    ],
+  },
+  {
+    id: 'reg-terms-unchecked',
+    description: 'Registration form — unchecked terms checkbox must block submission',
+    steps: [
+      ...OPEN_REGISTER_MODAL,
+      ...FILL_REG_VALID,
+      // Intentionally omit CHECK_TERMS
+      CLICK_CREATE_ACCOUNT,
+      ASSERT_REG_BLOCKED,
+    ],
+  },
+  {
+    id: 'reg-invalid-phone',
+    description: 'Registration form — non-numeric mobile number: check if format validation exists',
+    steps: [
+      ...OPEN_REGISTER_MODAL,
+      { description: 'Fill first name', action: { kind: 'fill', selector: '#reg-firstname', value: 'Sentinel' } },
+      { description: 'Fill last name',  action: { kind: 'fill', selector: '#reg-lastname',  value: 'Test' } },
+      { description: 'Fill email',      action: { kind: 'fill', selector: '#reg-email',     value: 'sentinel-test@sentinel.dev' } },
+      { description: 'Fill non-numeric mobile number "abc"', action: { kind: 'fill', selector: '#reg-mobile-num', value: 'abc' } },
+      { description: 'Fill password',         action: { kind: 'fill', selector: '#reg-password',         value: 'Test@12345!' } },
+      { description: 'Fill confirm password', action: { kind: 'fill', selector: '#reg-confirm-password', value: 'Test@12345!' } },
+      CHECK_TERMS,
+      CLICK_CREATE_ACCOUNT,
+      ASSERT_REG_BLOCKED,
+    ],
+  },
+  {
+    id: 'reg-country-code-default',
+    description: 'Registration form — country code select should default to South Africa (+27)',
+    // No submit steps — spec reads the select value directly after the modal opens
+    steps: [
+      ...OPEN_REGISTER_MODAL,
+    ],
+  },
+  {
+    id: 'reg-happy-path',
+    description: 'Registration form — valid data causes a Firebase Auth signUp request to the backend',
+    // No final assertion in journey — spec verifies the auth request was attempted via waitForRequest
+    steps: [
+      ...OPEN_REGISTER_MODAL,
+      ...FILL_REG_VALID,
+      CHECK_TERMS,
+      CLICK_CREATE_ACCOUNT,
     ],
   },
 ];
