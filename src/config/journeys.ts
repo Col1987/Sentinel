@@ -457,4 +457,145 @@ export const journeys: Journey[] = [
       { description: 'Verify login email field reappears', action: { kind: 'waitFor', selector: '#login-email', state: 'visible' } },
     ],
   },
+
+  // ─── Navigation journeys ──────────────────────────────────────────────────────
+
+  {
+    id: 'nav-platform-link',
+    description: 'Desktop nav — "The Platform" link scrolls the #platform section into view',
+    steps: [
+      { description: 'Click The Platform nav link', action: { kind: 'click', selector: '.nav-links a:has-text("The Platform")' } },
+    ],
+  },
+  {
+    id: 'nav-how-it-works-link',
+    description: 'Desktop nav — "How It Works" link scrolls the #how-it-works section into view',
+    steps: [
+      { description: 'Click How It Works nav link', action: { kind: 'click', selector: '.nav-links a:has-text("How It Works")' } },
+    ],
+  },
+  {
+    id: 'nav-welcome-packs-link',
+    description: 'Desktop nav — "Welcome Packs" link scrolls the #gifts section into view',
+    steps: [
+      { description: 'Click Welcome Packs nav link', action: { kind: 'click', selector: '.nav-links a:has-text("Welcome Packs")' } },
+    ],
+  },
+  {
+    id: 'nav-my-account-link',
+    description: 'Desktop nav — "My Account" link navigates to /account.html',
+    steps: [
+      { description: 'Click My Account nav link', action: { kind: 'click', selector: '#nav-account' } },
+    ],
+  },
+  {
+    id: 'nav-logo-home',
+    description: 'Logo link — clicking from any scroll position returns to the top of the homepage',
+    steps: [
+      { description: 'Click the logo link', action: { kind: 'click', selector: 'a[href="index.html"]' } },
+    ],
+  },
+
+  // ─── Modal open/close journeys ─────────────────────────────────────────────────
+
+  {
+    id: 'modal-login-opens',
+    description: 'Login modal — clicking #btn-login makes #auth-modal visible',
+    steps: [
+      { description: 'Click Login button',                      action: { kind: 'click',   selector: '#btn-login' } },
+      { description: 'Verify auth modal overlay is visible',    action: { kind: 'waitFor', selector: '#auth-modal', state: 'visible' } },
+    ],
+  },
+  {
+    id: 'modal-login-closes-x',
+    description: 'Login modal — clicking × closes #auth-modal',
+    steps: [
+      ...OPEN_LOGIN_MODAL,
+      { description: 'Click modal × close button',             action: { kind: 'click',   selector: '#auth-modal .modal-close' } },
+      { description: 'Verify auth modal overlay is hidden',    action: { kind: 'waitFor', selector: '#auth-modal', state: 'hidden' } },
+    ],
+  },
+  {
+    id: 'modal-login-to-register',
+    description: 'Login modal — Register link switches to the registration form',
+    steps: [
+      ...OPEN_LOGIN_MODAL,
+      { description: 'Click Register link',                              action: { kind: 'click',   selector: 'a:has-text("Register")' } },
+      { description: 'Verify registration first name field is visible',  action: { kind: 'waitFor', selector: '#reg-firstname', state: 'visible' } },
+    ],
+  },
+  {
+    id: 'modal-register-to-login',
+    description: 'Register form — Login link switches back to the login form',
+    steps: [
+      ...OPEN_REGISTER_MODAL,
+      { description: 'Click Login link in register form',      action: { kind: 'click',   selector: '#auth-register a:has-text("Login")' } },
+      { description: 'Verify login email field is visible',    action: { kind: 'waitFor', selector: '#login-email', state: 'visible' } },
+    ],
+  },
+  {
+    id: 'modal-login-to-forgot',
+    description: 'Login modal — Forgot password link switches to the forgot password form',
+    steps: [
+      ...OPEN_LOGIN_MODAL,
+      { description: 'Click Forgot your password? link',       action: { kind: 'click',   selector: 'a:has-text("Forgot")' } },
+      { description: 'Verify forgot email field is visible',   action: { kind: 'waitFor', selector: '#forgot-email', state: 'visible' } },
+    ],
+  },
+  {
+    id: 'modal-demo-opens',
+    description: 'Demo modal — clicking Book a Demo makes #demo-modal visible',
+    steps: [
+      { description: 'Click Book a Demo button',               action: { kind: 'click',   selector: 'button:has-text("Book a Demo")' } },
+      { description: 'Verify demo modal overlay is visible',   action: { kind: 'waitFor', selector: '#demo-modal', state: 'visible' } },
+    ],
+  },
+  {
+    id: 'modal-demo-closes-x',
+    description: 'Demo modal — clicking × closes #demo-modal',
+    steps: [
+      { description: 'Click Book a Demo button',               action: { kind: 'click',   selector: 'button:has-text("Book a Demo")' } },
+      { description: 'Verify demo modal overlay is visible',   action: { kind: 'waitFor', selector: '#demo-modal', state: 'visible' } },
+      { description: 'Click modal × close button',             action: { kind: 'click',   selector: '#demo-modal .modal-close' } },
+      { description: 'Verify demo modal overlay is hidden',    action: { kind: 'waitFor', selector: '#demo-modal', state: 'hidden' } },
+    ],
+  },
+  {
+    id: 'modal-cart-opens',
+    description: 'Cart drawer — clicking #nav-cart makes #cart-drawer visible',
+    steps: [
+      { description: 'Click cart nav button',                  action: { kind: 'click',   selector: '#nav-cart' } },
+      { description: 'Verify cart drawer is visible',          action: { kind: 'waitFor', selector: '#cart-drawer', state: 'visible' } },
+    ],
+  },
+  {
+    id: 'modal-cart-closes',
+    description: 'Cart drawer — clicking × inside the cart hides #cart-drawer',
+    steps: [
+      { description: 'Click cart nav button',                  action: { kind: 'click',   selector: '#nav-cart' } },
+      { description: 'Verify cart drawer is visible',          action: { kind: 'waitFor', selector: '#cart-drawer', state: 'visible' } },
+      { description: 'Click × close button in cart header',    action: { kind: 'click',   selector: '.cart-header button:has-text("×")' } },
+      { description: 'Verify cart drawer is hidden',           action: { kind: 'waitFor', selector: '#cart-drawer', state: 'hidden' } },
+    ],
+  },
+
+  // ─── Mobile/responsive journeys ────────────────────────────────────────────────
+
+  {
+    id: 'mobile-hamburger-opens',
+    description: 'Mobile — hamburger button makes #mobile-menu visible',
+    steps: [
+      { description: 'Click hamburger button',                 action: { kind: 'click',   selector: '#nav-hamburger' } },
+      { description: 'Verify mobile menu is visible',          action: { kind: 'waitFor', selector: '#mobile-menu', state: 'visible' } },
+    ],
+  },
+  {
+    id: 'mobile-nav-links-work',
+    description: 'Mobile — tapping a mobile nav link scrolls to the target section',
+    steps: [
+      { description: 'Click hamburger to open mobile menu',    action: { kind: 'click',   selector: '#nav-hamburger' } },
+      { description: 'Wait for mobile menu to appear',         action: { kind: 'waitFor', selector: '#mobile-menu', state: 'visible' } },
+      { description: 'Click How It Works in mobile menu',      action: { kind: 'click',   selector: '#mobile-menu a:has-text("How It Works")' } },
+    ],
+  },
 ];
