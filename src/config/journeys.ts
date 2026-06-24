@@ -101,6 +101,53 @@ const ASSERT_REG_BLOCKED: JourneyStep = {
   action: { kind: 'assertVisible', selector: 'button:has-text("Create Account")' },
 };
 
+// ─── Login form shared steps ──────────────────────────────────────────────────
+
+const OPEN_LOGIN_MODAL: JourneyStep[] = [
+  {
+    description: 'Click Login button to open the login modal',
+    action: { kind: 'click', selector: '#btn-login' },
+  },
+  {
+    description: 'Wait for login modal to appear',
+    action: { kind: 'waitFor', selector: '#login-email', state: 'visible' },
+  },
+];
+
+const CLICK_LOGIN_SUBMIT: JourneyStep = {
+  description: 'Click Login submit button',
+  action: { kind: 'click', selector: 'button[type="submit"]:has-text("Login")' },
+};
+
+const ASSERT_LOGIN_BLOCKED: JourneyStep = {
+  description: 'Assert Login button is still visible — submission was blocked by validation',
+  action: { kind: 'assertVisible', selector: 'button[type="submit"]:has-text("Login")' },
+};
+
+// ─── Forgot password shared steps ────────────────────────────────────────────
+
+const OPEN_FORGOT_MODAL: JourneyStep[] = [
+  ...OPEN_LOGIN_MODAL,
+  {
+    description: 'Click "Forgot your password?" link',
+    action: { kind: 'click', selector: 'a:has-text("Forgot")' },
+  },
+  {
+    description: 'Wait for forgot password form to appear',
+    action: { kind: 'waitFor', selector: '#forgot-email', state: 'visible' },
+  },
+];
+
+const CLICK_SEND_RESET: JourneyStep = {
+  description: 'Click Send Reset Link button',
+  action: { kind: 'click', selector: 'button[type="submit"]:has-text("Send Reset Link")' },
+};
+
+const ASSERT_FORGOT_BLOCKED: JourneyStep = {
+  description: 'Assert Send Reset Link button is still visible — submission was blocked',
+  action: { kind: 'assertVisible', selector: 'button[type="submit"]:has-text("Send Reset Link")' },
+};
+
 // ─── Journeys ────────────────────────────────────────────────────────────────
 
 export const journeys: Journey[] = [
@@ -303,6 +350,111 @@ export const journeys: Journey[] = [
       ...FILL_REG_VALID,
       CHECK_TERMS,
       CLICK_CREATE_ACCOUNT,
+    ],
+  },
+
+  // ─── Login form journeys ─────────────────────────────────────────────────────
+
+  {
+    id: 'login-empty-submit',
+    description: 'Login form — empty submit must be blocked by validation',
+    steps: [
+      ...OPEN_LOGIN_MODAL,
+      CLICK_LOGIN_SUBMIT,
+      ASSERT_LOGIN_BLOCKED,
+    ],
+  },
+  {
+    id: 'login-invalid-email',
+    description: 'Login form — non-email string must be rejected by input type="email" validation',
+    steps: [
+      ...OPEN_LOGIN_MODAL,
+      { description: 'Fill non-email string', action: { kind: 'fill', selector: '#login-email',    value: 'notanemail' } },
+      { description: 'Fill any password',     action: { kind: 'fill', selector: '#login-password', value: 'AnyPassword1' } },
+      CLICK_LOGIN_SUBMIT,
+      ASSERT_LOGIN_BLOCKED,
+    ],
+  },
+  {
+    id: 'login-password-toggle',
+    description: 'Login form — show/hide toggle must switch input type between "password" and "text"',
+    steps: [
+      ...OPEN_LOGIN_MODAL,
+      { description: 'Fill password field with a test value',      action: { kind: 'fill',          selector: '#login-password',               value: 'TestPassword123' } },
+      { description: 'Assert input type is "password" initially',  action: { kind: 'assertVisible', selector: '#login-password[type="password"]' } },
+      { description: 'Click Show Password toggle',                 action: { kind: 'click',         selector: '#login-password ~ button[aria-label="Show password"]' } },
+      { description: 'Assert input type changed to "text"',        action: { kind: 'assertVisible', selector: '#login-password[type="text"]' } },
+      { description: 'Click Hide Password toggle',                 action: { kind: 'click',         selector: '#login-password ~ button[aria-label="Hide password"]' } },
+      { description: 'Assert input type reverted to "password"',   action: { kind: 'assertVisible', selector: '#login-password[type="password"]' } },
+    ],
+  },
+  {
+    id: 'login-remember-me',
+    description: 'Login form — remember-me checkbox must be present and interactive',
+    steps: [
+      ...OPEN_LOGIN_MODAL,
+      { description: 'Verify checkbox is unchecked by default', action: { kind: 'assertVisible', selector: '#login-remember:not(:checked)' } },
+      { description: 'Click checkbox to check it',              action: { kind: 'click',         selector: '#login-remember' } },
+      { description: 'Verify checkbox is now checked',          action: { kind: 'assertVisible', selector: '#login-remember:checked' } },
+    ],
+  },
+  {
+    id: 'login-to-register',
+    description: 'Login form — Register link must open the registration form',
+    steps: [
+      ...OPEN_LOGIN_MODAL,
+      { description: 'Click Register link',                   action: { kind: 'click',   selector: 'a:has-text("Register")' } },
+      { description: 'Verify registration form is now visible', action: { kind: 'waitFor', selector: '#reg-firstname', state: 'visible' } },
+    ],
+  },
+  {
+    id: 'login-to-forgot',
+    description: 'Login form — Forgot password link must open the forgot password form',
+    steps: [
+      ...OPEN_LOGIN_MODAL,
+      { description: 'Click Forgot your password? link',       action: { kind: 'click',   selector: 'a:has-text("Forgot")' } },
+      { description: 'Verify forgot password form is visible', action: { kind: 'waitFor', selector: '#forgot-email', state: 'visible' } },
+    ],
+  },
+
+  // ─── Forgot password form journeys ──────────────────────────────────────────
+
+  {
+    id: 'forgot-empty-submit',
+    description: 'Forgot password form — empty submit must be blocked by validation',
+    steps: [
+      ...OPEN_FORGOT_MODAL,
+      CLICK_SEND_RESET,
+      ASSERT_FORGOT_BLOCKED,
+    ],
+  },
+  {
+    id: 'forgot-invalid-email',
+    description: 'Forgot password form — non-email string must be rejected by input type="email" validation',
+    steps: [
+      ...OPEN_FORGOT_MODAL,
+      { description: 'Fill non-email string', action: { kind: 'fill', selector: '#forgot-email', value: 'notanemail' } },
+      CLICK_SEND_RESET,
+      ASSERT_FORGOT_BLOCKED,
+    ],
+  },
+  {
+    id: 'forgot-happy-path',
+    description: 'Forgot password form — valid email must trigger a Firebase Auth password-reset request',
+    // No journey assertion — spec verifies the sendOobCode request was attempted via waitForRequest
+    steps: [
+      ...OPEN_FORGOT_MODAL,
+      { description: 'Fill valid email', action: { kind: 'fill', selector: '#forgot-email', value: 'sentinel-test@sentinel.dev' } },
+      CLICK_SEND_RESET,
+    ],
+  },
+  {
+    id: 'forgot-back-to-login',
+    description: 'Forgot password form — Back to login link must restore the login form',
+    steps: [
+      ...OPEN_FORGOT_MODAL,
+      { description: 'Click Back to login link',            action: { kind: 'click',   selector: '#auth-forgot a:has-text("Back")' } },
+      { description: 'Verify login email field reappears', action: { kind: 'waitFor', selector: '#login-email', state: 'visible' } },
     ],
   },
 ];
