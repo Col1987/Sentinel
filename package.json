@@ -1,0 +1,22 @@
+{
+  "name": "sentinel",
+  "version": "0.1.0",
+  "description": "AI-powered website testing framework",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "test:smoke": "playwright test --project=smoke",
+    "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\" \"playwright.config.ts\"",
+    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\" \"*.ts\"",
+    "audit": "playwright test --project=audit"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.45.0",
+    "@types/node": "^20.14.0",
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "eslint": "^8.57.0",
+    "prettier": "^3.3.3",
+    "typescript": "^5.5.0"
+  }
+}
