@@ -8,7 +8,7 @@ const SCREENSHOT_DIR = 'reports/screenshots';
 async function executeStep(page: Page, action: Action): Promise<void> {
   switch (action.kind) {
     case 'click':
-      await page.locator(action.selector).click();
+      await page.locator(action.selector).click({ force: action.force });
       break;
 
     case 'fill':
