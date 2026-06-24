@@ -8,7 +8,8 @@
     "test:smoke": "playwright test --project=smoke",
     "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\" \"playwright.config.ts\"",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\" \"*.ts\"",
-    "audit": "playwright test --project=audit"
+    "audit": "playwright test --project=audit",
+    "discover": "playwright test --project=audit --grep @discovery"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",
