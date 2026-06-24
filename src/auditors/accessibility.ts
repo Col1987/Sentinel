@@ -19,14 +19,13 @@ export async function auditAccessibility(page: Page, targetUrl: string): Promise
     const severity: Severity = IMPACT_MAP[violation.impact ?? ''] ?? 'info';
 
     for (const node of violation.nodes) {
-      const selector = node.target.join(' > ');
-      const summary = node.failureSummary?.split('\n')[0] ?? '';
       findings.push({
         url: targetUrl,
         severity,
         category: 'accessibility',
         message: `[${violation.id}] ${violation.description}`,
-        detail: `Selector: ${selector} | ${summary} | Help: ${violation.helpUrl}`,
+        selector: node.target.join(' > '),
+        helpUrl: violation.helpUrl,
       });
     }
   }

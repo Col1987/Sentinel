@@ -6,6 +6,8 @@ export interface AuditFinding {
   category: string;
   message: string;
   detail?: string;
+  selector?: string;
+  helpUrl?: string;
   screenshotPath?: string;
 }
 
