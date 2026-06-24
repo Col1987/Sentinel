@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { runJourney } from '../../src/runners/journey-runner';
 import { journeys } from '../../src/config/journeys';
+import { LIVE_MODE } from '../../src/config/sites';
 
 const find = (id: string) => journeys.find(j => j.id === id)!;
 
@@ -21,7 +22,8 @@ test.describe('Registration form', { tag: ['@functional'] }, () => {
   // ─── Required field validation ────────────────────────────────────────────
 
   test('empty submit — all required fields must be filled', async ({ page }) => {
-    await page.route(SIGN_UP_URL, route => route.abort());
+    if (LIVE_MODE) test.slow();
+    if (!LIVE_MODE) await page.route(SIGN_UP_URL, route => route.abort());
     await page.goto('/');
     await runJourney(emptySubmit, page);
   });
@@ -29,12 +31,15 @@ test.describe('Registration form', { tag: ['@functional'] }, () => {
   // ─── Password validation ──────────────────────────────────────────────────
 
   test('password mismatch — confirm must match password', async ({ page }) => {
+    if (LIVE_MODE) test.slow();
     let signUpAttempted = false;
 
-    await page.route(SIGN_UP_URL, async (route) => {
-      signUpAttempted = true;
-      await route.abort();
-    });
+    if (!LIVE_MODE) {
+      await page.route(SIGN_UP_URL, async (route) => {
+        signUpAttempted = true;
+        await route.abort();
+      });
+    }
 
     await page.goto('/');
     await runJourney(pwMismatch, page);
@@ -48,12 +53,15 @@ test.describe('Registration form', { tag: ['@functional'] }, () => {
   });
 
   test('weak password — "123" must be rejected before reaching the backend', async ({ page }) => {
+    if (LIVE_MODE) test.slow();
     let signUpAttempted = false;
 
-    await page.route(SIGN_UP_URL, async (route) => {
-      signUpAttempted = true;
-      await route.abort();
-    });
+    if (!LIVE_MODE) {
+      await page.route(SIGN_UP_URL, async (route) => {
+        signUpAttempted = true;
+        await route.abort();
+      });
+    }
 
     await page.goto('/');
     await runJourney(weakPassword, page);
@@ -71,12 +79,15 @@ test.describe('Registration form', { tag: ['@functional'] }, () => {
   // ─── Input format validation ──────────────────────────────────────────────
 
   test('invalid email — type="email" must reject non-email format', async ({ page }) => {
+    if (LIVE_MODE) test.slow();
     let signUpAttempted = false;
 
-    await page.route(SIGN_UP_URL, async (route) => {
-      signUpAttempted = true;
-      await route.abort();
-    });
+    if (!LIVE_MODE) {
+      await page.route(SIGN_UP_URL, async (route) => {
+        signUpAttempted = true;
+        await route.abort();
+      });
+    }
 
     await page.goto('/');
     await runJourney(invalidEmail, page);
@@ -90,12 +101,15 @@ test.describe('Registration form', { tag: ['@functional'] }, () => {
   });
 
   test('terms unchecked — required checkbox must block submission', async ({ page }) => {
+    if (LIVE_MODE) test.slow();
     let signUpAttempted = false;
 
-    await page.route(SIGN_UP_URL, async (route) => {
-      signUpAttempted = true;
-      await route.abort();
-    });
+    if (!LIVE_MODE) {
+      await page.route(SIGN_UP_URL, async (route) => {
+        signUpAttempted = true;
+        await route.abort();
+      });
+    }
 
     await page.goto('/');
     await runJourney(termsUnchecked, page);
@@ -109,12 +123,15 @@ test.describe('Registration form', { tag: ['@functional'] }, () => {
   });
 
   test('invalid phone — "abc" as mobile number: check if format validation exists', async ({ page }) => {
+    if (LIVE_MODE) test.slow();
     let signUpAttempted = false;
 
-    await page.route(SIGN_UP_URL, async (route) => {
-      signUpAttempted = true;
-      await route.abort();
-    });
+    if (!LIVE_MODE) {
+      await page.route(SIGN_UP_URL, async (route) => {
+        signUpAttempted = true;
+        await route.abort();
+      });
+    }
 
     await page.goto('/');
     await runJourney(invalidPhone, page);
@@ -163,9 +180,10 @@ test.describe('Registration form', { tag: ['@functional'] }, () => {
   // ─── Happy path ───────────────────────────────────────────────────────────
 
   test('happy path — valid data causes a Firebase Auth signUp request', async ({ page }) => {
+    if (LIVE_MODE) test.slow();
     // Block the actual signUp to prevent creating a real account.
     // waitForRequest resolves as soon as the request is dispatched, before the abort fires.
-    await page.route(SIGN_UP_URL, route => route.abort());
+    if (!LIVE_MODE) await page.route(SIGN_UP_URL, route => route.abort());
 
     const signUpRequest = page.waitForRequest(
       req => req.url().includes('accounts:signUp') && req.method() === 'POST',

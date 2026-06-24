@@ -4,6 +4,7 @@ import { defaultSite } from './src/config/sites';
 export default defineConfig({
   testDir: './tests',
   timeout: 60_000,
+  globalSetup: './src/config/global-setup',
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : 4,
   reporter: [

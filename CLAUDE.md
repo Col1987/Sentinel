@@ -61,6 +61,36 @@ sentinel/
 - Never commit to main directly. PR workflow only
 - `reports/` and `.env` are gitignored
 
+### Live Mode
+
+`LIVE_MODE` is exported from `src/config/sites.ts` and driven by the `SENTINEL_LIVE_MODE` env var:
+
+```
+SENTINEL_LIVE_MODE=true npx playwright test --project=functional
+```
+
+Default is `false` (safe mode — all outbound requests are intercepted and aborted).
+
+Every test that uses `page.route()` must follow this pattern:
+
+```typescript
+import { LIVE_MODE } from '../../src/config/sites';
+
+test('...', async ({ page }) => {
+  if (LIVE_MODE) test.slow();         // real network calls take longer
+
+  if (!LIVE_MODE) {
+    await page.route('**/endpoint', async (route) => {
+      // intercept / abort / fulfill as needed
+    });
+  }
+
+  // all test logic and assertions unchanged
+});
+```
+
+When LIVE_MODE is true a warning is printed at the start of the run via `globalSetup`. Only enable LIVE_MODE when intentional end-to-end verification against real backends is needed.
+
 ### Reporting
 - Reports output to `reports/` as self-contained HTML files
 - Each report includes: timestamp, target URL, pass/fail summary, categorised findings with severity (critical/high/medium/low/info), screenshots where relevant

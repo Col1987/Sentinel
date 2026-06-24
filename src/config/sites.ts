@@ -15,3 +15,7 @@ export const sites: Record<string, SiteConfig> = {
 };
 
 export const defaultSite = sites[process.env.TARGET_SITE ?? 'juelhaus'];
+
+// When true, tests skip route interception and interact with real backends.
+// Set SENTINEL_LIVE_MODE=true only when intentional end-to-end verification is needed.
+export const LIVE_MODE = process.env.SENTINEL_LIVE_MODE === 'true';

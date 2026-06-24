@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { runJourney } from '../../src/runners/journey-runner';
 import { journeys } from '../../src/config/journeys';
+import { LIVE_MODE } from '../../src/config/sites';
 
 const find = (id: string) => journeys.find(j => j.id === id)!;
 
@@ -22,12 +23,15 @@ test.describe('Forgot password form', { tag: ['@functional'] }, () => {
   });
 
   test('invalid email — type="email" must reject non-email format', async ({ page }) => {
+    if (LIVE_MODE) test.slow();
     let sendOobAttempted = false;
 
-    await page.route(SEND_OOB_URL, async (route) => {
-      sendOobAttempted = true;
-      await route.abort();
-    });
+    if (!LIVE_MODE) {
+      await page.route(SEND_OOB_URL, async (route) => {
+        sendOobAttempted = true;
+        await route.abort();
+      });
+    }
 
     await page.goto('/');
     await runJourney(invalidEmail, page);
@@ -43,9 +47,10 @@ test.describe('Forgot password form', { tag: ['@functional'] }, () => {
   // ─── Happy path ───────────────────────────────────────────────────────────
 
   test('happy path — valid email triggers a Firebase Auth password-reset request', async ({ page }) => {
+    if (LIVE_MODE) test.slow();
     // Block the actual request to prevent sending a real reset email.
     // waitForRequest resolves when the request is dispatched, before the abort takes effect.
-    await page.route(SEND_OOB_URL, route => route.abort());
+    if (!LIVE_MODE) await page.route(SEND_OOB_URL, route => route.abort());
 
     const resetRequest = page.waitForRequest(
       req => req.url().includes('sendPasswordReset') && req.method() === 'POST',

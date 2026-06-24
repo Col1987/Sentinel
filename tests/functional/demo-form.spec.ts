@@ -1,6 +1,7 @@
 import { test } from '@playwright/test';
 import { runJourney } from '../../src/runners/journey-runner';
 import { journeys } from '../../src/config/journeys';
+import { LIVE_MODE } from '../../src/config/sites';
 
 const find = (id: string) => journeys.find(j => j.id === id)!;
 
@@ -20,11 +21,15 @@ test.describe('Demo booking form', { tag: ['@functional'] }, () => {
   // ─── Positive flow ───────────────────────────────────────────────────────────
 
   test('happy path — fills all fields and submits', async ({ page }) => {
+    if (LIVE_MODE) test.slow();
+
     // Intercept only the Cloud Function endpoint. Firebase callable SDK wraps
     // responses in {"result":...} — that exact shape triggers the success state.
-    await page.route('**/createDemoRequest', async (route) => {
-      await route.fulfill({ status: 200, contentType: 'application/json', body: SUCCESS_BODY });
-    });
+    if (!LIVE_MODE) {
+      await page.route('**/createDemoRequest', async (route) => {
+        await route.fulfill({ status: 200, contentType: 'application/json', body: SUCCESS_BODY });
+      });
+    }
 
     await page.goto('/');
     await runJourney(happyPath, page);
@@ -33,16 +38,20 @@ test.describe('Demo booking form', { tag: ['@functional'] }, () => {
   // ─── Validation — required fields ────────────────────────────────────────────
 
   test('empty submit — form should not reach a success state without data', async ({ page }) => {
+    if (LIVE_MODE) test.slow();
+
     let postAttempted = false;
 
-    await page.route('**/*', async (route) => {
-      if (route.request().method() === 'POST') {
-        postAttempted = true;
-        await route.abort();
-      } else {
-        await route.continue();
-      }
-    });
+    if (!LIVE_MODE) {
+      await page.route('**/*', async (route) => {
+        if (route.request().method() === 'POST') {
+          postAttempted = true;
+          await route.abort();
+        } else {
+          await route.continue();
+        }
+      });
+    }
 
     await page.goto('/');
     await runJourney(emptySubmit, page);
@@ -61,12 +70,16 @@ test.describe('Demo booking form', { tag: ['@functional'] }, () => {
   });
 
   test('missing name — validation should block submission without name', async ({ page }) => {
+    if (LIVE_MODE) test.slow();
+
     let postFired = false;
 
-    await page.route('**/createDemoRequest', async (route) => {
-      postFired = true;
-      await route.abort();
-    });
+    if (!LIVE_MODE) {
+      await page.route('**/createDemoRequest', async (route) => {
+        postFired = true;
+        await route.abort();
+      });
+    }
 
     await page.goto('/');
     await runJourney(missingName, page);
@@ -80,12 +93,16 @@ test.describe('Demo booking form', { tag: ['@functional'] }, () => {
   });
 
   test('missing email — validation should block submission without email', async ({ page }) => {
+    if (LIVE_MODE) test.slow();
+
     let postFired = false;
 
-    await page.route('**/createDemoRequest', async (route) => {
-      postFired = true;
-      await route.abort();
-    });
+    if (!LIVE_MODE) {
+      await page.route('**/createDemoRequest', async (route) => {
+        postFired = true;
+        await route.abort();
+      });
+    }
 
     await page.goto('/');
     await runJourney(missingEmail, page);
@@ -101,12 +118,16 @@ test.describe('Demo booking form', { tag: ['@functional'] }, () => {
   // ─── Validation — input format ────────────────────────────────────────────────
 
   test('invalid email — browser validation should reject non-email format', async ({ page }) => {
+    if (LIVE_MODE) test.slow();
+
     let postFired = false;
 
-    await page.route('**/createDemoRequest', async (route) => {
-      postFired = true;
-      await route.abort();
-    });
+    if (!LIVE_MODE) {
+      await page.route('**/createDemoRequest', async (route) => {
+        postFired = true;
+        await route.abort();
+      });
+    }
 
     await page.goto('/');
     await runJourney(invalidEmail, page);
@@ -122,15 +143,19 @@ test.describe('Demo booking form', { tag: ['@functional'] }, () => {
   // ─── Boundary / robustness ───────────────────────────────────────────────────
 
   test('long input — 2000-char name should not break the form', async ({ page }) => {
+    if (LIVE_MODE) test.slow();
+
     let sentNameLength = -1;
 
-    await page.route('**/createDemoRequest', async (route) => {
-      try {
-        const body = JSON.parse(route.request().postData() ?? '{}');
-        sentNameLength = (body?.data?.name ?? '').length;
-      } catch { /* ignore parse errors */ }
-      await route.fulfill({ status: 200, contentType: 'application/json', body: SUCCESS_BODY });
-    });
+    if (!LIVE_MODE) {
+      await page.route('**/createDemoRequest', async (route) => {
+        try {
+          const body = JSON.parse(route.request().postData() ?? '{}');
+          sentNameLength = (body?.data?.name ?? '').length;
+        } catch { /* ignore parse errors */ }
+        await route.fulfill({ status: 200, contentType: 'application/json', body: SUCCESS_BODY });
+      });
+    }
 
     await page.goto('/');
     await runJourney(longInput, page);
@@ -149,6 +174,8 @@ test.describe('Demo booking form', { tag: ['@functional'] }, () => {
   });
 
   test('special chars — XSS payload in name must not execute as code', async ({ page }) => {
+    if (LIVE_MODE) test.slow();
+
     let xssAlertFired = false;
 
     page.on('dialog', async (dialog) => {
@@ -156,9 +183,11 @@ test.describe('Demo booking form', { tag: ['@functional'] }, () => {
       await dialog.dismiss();
     });
 
-    await page.route('**/createDemoRequest', async (route) => {
-      await route.fulfill({ status: 200, contentType: 'application/json', body: SUCCESS_BODY });
-    });
+    if (!LIVE_MODE) {
+      await page.route('**/createDemoRequest', async (route) => {
+        await route.fulfill({ status: 200, contentType: 'application/json', body: SUCCESS_BODY });
+      });
+    }
 
     await page.goto('/');
     await runJourney(specialChars, page);
@@ -173,15 +202,19 @@ test.describe('Demo booking form', { tag: ['@functional'] }, () => {
   // ─── Concurrency ─────────────────────────────────────────────────────────────
 
   test('double submit — concurrent clicks should fire only one request', async ({ page }) => {
+    if (LIVE_MODE) test.slow();
+
     let requestCount = 0;
 
-    await page.route('**/createDemoRequest', async (route) => {
-      requestCount++;
-      // Hold the response briefly so both clicks have a chance to fire before
-      // the first one resolves and the success state hides the button.
-      await new Promise<void>(r => setTimeout(r, 150));
-      await route.fulfill({ status: 200, contentType: 'application/json', body: SUCCESS_BODY });
-    });
+    if (!LIVE_MODE) {
+      await page.route('**/createDemoRequest', async (route) => {
+        requestCount++;
+        // Hold the response briefly so both clicks have a chance to fire before
+        // the first one resolves and the success state hides the button.
+        await new Promise<void>(r => setTimeout(r, 150));
+        await route.fulfill({ status: 200, contentType: 'application/json', body: SUCCESS_BODY });
+      });
+    }
 
     await page.goto('/');
     await runJourney(doubleSubmit, page);

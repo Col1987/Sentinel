@@ -1,6 +1,7 @@
 import { test } from '@playwright/test';
 import { runJourney } from '../../src/runners/journey-runner';
 import { journeys } from '../../src/config/journeys';
+import { LIVE_MODE } from '../../src/config/sites';
 
 const find = (id: string) => journeys.find(j => j.id === id)!;
 
@@ -25,12 +26,15 @@ test.describe('Login form', { tag: ['@functional'] }, () => {
   });
 
   test('invalid email — type="email" must reject non-email format', async ({ page }) => {
+    if (LIVE_MODE) test.slow();
     let signInAttempted = false;
 
-    await page.route(SIGN_IN_URL, async (route) => {
-      signInAttempted = true;
-      await route.abort();
-    });
+    if (!LIVE_MODE) {
+      await page.route(SIGN_IN_URL, async (route) => {
+        signInAttempted = true;
+        await route.abort();
+      });
+    }
 
     await page.goto('/');
     await runJourney(invalidEmail, page);
