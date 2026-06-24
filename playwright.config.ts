@@ -33,6 +33,7 @@ export default defineConfig({
     {
       name: 'audit',
       testMatch: '**/audits/**/*.spec.ts',
+      grep: /@audit/,
       use: { ...devices['Desktop Chrome'] },
     },
   ],

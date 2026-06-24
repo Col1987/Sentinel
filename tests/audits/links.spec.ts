@@ -3,7 +3,7 @@ import { auditBrokenLinks } from '../../src/auditors/links';
 import { generateReport } from '../../src/reports/generator';
 import { defaultSite } from '../../src/config/sites';
 
-test.describe('Broken links audit @regression', () => {
+test.describe('Broken links audit', { tag: ['@audit', '@regression'] }, () => {
   test('should have no broken links on the homepage', async ({ page }) => {
     await page.goto('/');
 

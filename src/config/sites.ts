@@ -2,6 +2,7 @@ export interface SiteConfig {
   name: string;
   baseUrl: string;
   timeout?: number;
+  pages?: string[];
 }
 
 export const sites: Record<string, SiteConfig> = {
@@ -9,6 +10,7 @@ export const sites: Record<string, SiteConfig> = {
     name: 'Juel Haus',
     baseUrl: 'https://www.juelhaus.co.za',
     timeout: 30_000,
+    pages: ['/'],
   },
 };
 
