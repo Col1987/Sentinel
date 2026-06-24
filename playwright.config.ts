@@ -36,5 +36,10 @@ export default defineConfig({
       grep: /@audit/,
       use: { ...devices['Desktop Chrome'] },
     },
+    {
+      name: 'security',
+      testMatch: '**/security/**/*.spec.ts',
+      use: { ...devices['Desktop Chrome'] },
+    },
   ],
 });
