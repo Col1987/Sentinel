@@ -1,5 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
+import { config as loadEnv } from 'dotenv';
 import { defaultSite } from './src/config/sites';
+
+loadEnv(); // populate process.env from .env before any test or config value is evaluated
 
 export default defineConfig({
   testDir: './tests',
@@ -41,6 +44,11 @@ export default defineConfig({
     {
       name: 'security',
       testMatch: '**/security/**/*.spec.ts',
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'admin',
+      testMatch: '**/admin/**/*.spec.ts',
       use: { ...devices['Desktop Chrome'] },
     },
   ],
