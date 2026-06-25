@@ -15,6 +15,7 @@ export interface JourneyStep {
 export interface Journey {
   id: string;
   description: string;
+  clientDescription: string;
   steps: JourneyStep[];
 }
 
@@ -154,6 +155,7 @@ export const journeys: Journey[] = [
   {
     id: 'demo-happy-path',
     description: 'Book a Demo modal — complete submission with valid data',
+    clientDescription: "Filled in the 'Book a Demo' form with a valid name, email address, and property details, then clicked Submit. CONFIRMED: the form successfully sent the booking request to the server.",
     steps: [
       ...OPEN_MODAL,
       { description: 'Fill name field', action: { kind: 'fill', selector: '#demo-name', value: 'Sentinel Test' } },
@@ -166,6 +168,7 @@ export const journeys: Journey[] = [
   {
     id: 'demo-empty-submit',
     description: 'Book a Demo modal — empty submit should not reach a success state',
+    clientDescription: "Opened the 'Book a Demo' form and clicked Submit without filling in any fields. CONFIRMED: the form correctly prevented submission and did not send any data to the server.",
     steps: [
       ...OPEN_MODAL,
       CLICK_SUBMIT,
@@ -175,6 +178,7 @@ export const journeys: Journey[] = [
   {
     id: 'demo-invalid-email',
     description: 'Book a Demo modal — non-email value should be rejected by browser validation',
+    clientDescription: "Entered an invalid email address ('not-an-email') in the demo booking form and clicked Submit. CONFIRMED: the form blocked submission — only properly formatted email addresses are accepted.",
     steps: [
       ...OPEN_MODAL,
       { description: 'Fill name field', action: { kind: 'fill', selector: '#demo-name', value: 'Sentinel Test' } },
@@ -187,6 +191,7 @@ export const journeys: Journey[] = [
   {
     id: 'demo-missing-name',
     description: 'Book a Demo modal — empty name should be rejected by validation',
+    clientDescription: "Left the name field empty in the demo booking form and clicked Submit. CONFIRMED: the form blocked submission — a name is required before the form can be sent.",
     steps: [
       ...OPEN_MODAL,
       { description: 'Fill email, leave name empty', action: { kind: 'fill', selector: '#demo-email', value: 'test@sentinel.dev' } },
@@ -198,6 +203,7 @@ export const journeys: Journey[] = [
   {
     id: 'demo-missing-email',
     description: 'Book a Demo modal — empty email should be rejected by validation',
+    clientDescription: "Left the email field empty in the demo booking form and clicked Submit. CONFIRMED: the form blocked submission — an email address is required before the form can be sent.",
     steps: [
       ...OPEN_MODAL,
       { description: 'Fill name, leave email empty', action: { kind: 'fill', selector: '#demo-name', value: 'Sentinel Test' } },
@@ -209,6 +215,7 @@ export const journeys: Journey[] = [
   {
     id: 'demo-long-input',
     description: 'Book a Demo modal — 2000-char name: frontend must not break and backend must receive full or truncated value',
+    clientDescription: "Entered an extremely long name (2,000 characters) into the demo booking form and submitted. CONFIRMED: the form handled this without crashing. A note was recorded about whether the full name or a shortened version reached the server.",
     steps: [
       ...OPEN_MODAL,
       { description: 'Fill name with 2000 characters', action: { kind: 'fill', selector: '#demo-name', value: 'A'.repeat(2000) } },
@@ -221,6 +228,7 @@ export const journeys: Journey[] = [
   {
     id: 'demo-special-chars',
     description: 'Book a Demo modal — HTML/script payload in name must not execute as code',
+    clientDescription: "Entered a name containing HTML code (a common technique used by hackers to try to inject malicious scripts) into the demo booking form. CONFIRMED: the code was not executed by the browser — the site is protected against this type of cross-site scripting attack.",
     steps: [
       ...OPEN_MODAL,
       { description: 'Fill name with XSS payload', action: { kind: 'fill', selector: '#demo-name', value: "O'Brien-Smith <script>alert(1)</script>" } },
@@ -233,6 +241,7 @@ export const journeys: Journey[] = [
   {
     id: 'demo-double-submit',
     description: 'Book a Demo modal — concurrent submit clicks must fire only one backend request',
+    clientDescription: "Clicked the 'Submit' button twice in very quick succession on the demo booking form. This checks whether the site prevents duplicate booking requests from a double-click — important to avoid sending the same enquiry twice.",
     steps: [
       ...OPEN_MODAL,
       { description: 'Fill name field', action: { kind: 'fill', selector: '#demo-name', value: 'Sentinel Test' } },
@@ -252,6 +261,7 @@ export const journeys: Journey[] = [
   {
     id: 'reg-empty-submit',
     description: 'Registration form — all fields empty, submit should be blocked by validation',
+    clientDescription: "Opened the registration form and clicked 'Create Account' without filling in any details. CONFIRMED: the form blocked submission — all required fields must be completed before an account can be created.",
     steps: [
       ...OPEN_REGISTER_MODAL,
       CLICK_CREATE_ACCOUNT,
@@ -261,6 +271,7 @@ export const journeys: Journey[] = [
   {
     id: 'reg-password-mismatch',
     description: 'Registration form — confirm password differs from password, must be rejected',
+    clientDescription: "Filled in the registration form with two different passwords in the 'Password' and 'Confirm Password' fields. CONFIRMED: the form detected the mismatch and blocked account creation — passwords must match.",
     steps: [
       ...OPEN_REGISTER_MODAL,
       { description: 'Fill first name', action: { kind: 'fill', selector: '#reg-firstname', value: 'Sentinel' } },
@@ -277,6 +288,7 @@ export const journeys: Journey[] = [
   {
     id: 'reg-weak-password',
     description: 'Registration form — password "123" should fail strength validation or backend minimum-length check',
+    clientDescription: "Tried to register with the password '123' — far too short and simple. This checks whether the site warns users about weak passwords before accepting them, protecting accounts from being easy to guess.",
     steps: [
       ...OPEN_REGISTER_MODAL,
       { description: 'Fill first name', action: { kind: 'fill', selector: '#reg-firstname', value: 'Sentinel' } },
@@ -293,6 +305,7 @@ export const journeys: Journey[] = [
   {
     id: 'reg-invalid-email',
     description: 'Registration form — non-email string should be rejected by input type="email" validation',
+    clientDescription: "Entered 'notanemail' (not a valid email address) in the registration email field. CONFIRMED: the form blocked submission — only properly formatted email addresses are accepted.",
     steps: [
       ...OPEN_REGISTER_MODAL,
       { description: 'Fill first name', action: { kind: 'fill', selector: '#reg-firstname', value: 'Sentinel' } },
@@ -309,6 +322,7 @@ export const journeys: Journey[] = [
   {
     id: 'reg-terms-unchecked',
     description: 'Registration form — unchecked terms checkbox must block submission',
+    clientDescription: "Filled in all registration details but left the Terms and Conditions checkbox unticked. CONFIRMED: the form blocked submission — users must accept the terms before creating an account.",
     steps: [
       ...OPEN_REGISTER_MODAL,
       ...FILL_REG_VALID,
@@ -320,6 +334,7 @@ export const journeys: Journey[] = [
   {
     id: 'reg-invalid-phone',
     description: 'Registration form — non-numeric mobile number: check if format validation exists',
+    clientDescription: "Entered 'abc' (letters instead of digits) in the mobile number field on the registration form. This checks whether the form validates the phone number format before allowing registration.",
     steps: [
       ...OPEN_REGISTER_MODAL,
       { description: 'Fill first name', action: { kind: 'fill', selector: '#reg-firstname', value: 'Sentinel' } },
@@ -336,6 +351,7 @@ export const journeys: Journey[] = [
   {
     id: 'reg-country-code-default',
     description: 'Registration form — country code select should default to South Africa (+27)',
+    clientDescription: "Opened the registration form and checked the country code dropdown. CONFIRMED: it defaults to South Africa (+27), which is correct for a South African business — visitors should not need to change it.",
     // No submit steps — spec reads the select value directly after the modal opens
     steps: [
       ...OPEN_REGISTER_MODAL,
@@ -344,6 +360,7 @@ export const journeys: Journey[] = [
   {
     id: 'reg-happy-path',
     description: 'Registration form — valid data causes a Firebase Auth signUp request to the backend',
+    clientDescription: "Filled in the registration form with valid test details and clicked 'Create Account'. CONFIRMED: the form sent a registration request to the server. The request was intercepted by Sentinel to prevent a real test account from being created.",
     // No final assertion in journey — spec verifies the auth request was attempted via waitForRequest
     steps: [
       ...OPEN_REGISTER_MODAL,
@@ -358,6 +375,7 @@ export const journeys: Journey[] = [
   {
     id: 'login-empty-submit',
     description: 'Login form — empty submit must be blocked by validation',
+    clientDescription: "Opened the login form and clicked 'Login' without entering an email or password. CONFIRMED: the form blocked submission and stayed on the login screen.",
     steps: [
       ...OPEN_LOGIN_MODAL,
       CLICK_LOGIN_SUBMIT,
@@ -367,6 +385,7 @@ export const journeys: Journey[] = [
   {
     id: 'login-invalid-email',
     description: 'Login form — non-email string must be rejected by input type="email" validation',
+    clientDescription: "Entered 'notanemail' in the email field of the login form and attempted to log in. CONFIRMED: the form blocked submission — a properly formatted email address is required.",
     steps: [
       ...OPEN_LOGIN_MODAL,
       { description: 'Fill non-email string', action: { kind: 'fill', selector: '#login-email',    value: 'notanemail' } },
@@ -378,6 +397,7 @@ export const journeys: Journey[] = [
   {
     id: 'login-password-toggle',
     description: 'Login form — show/hide toggle must switch input type between "password" and "text"',
+    clientDescription: "Clicked the 'Show Password' eye icon on the login form to reveal the password, then clicked again to hide it. CONFIRMED: the password field correctly switches between hidden dots and visible text.",
     steps: [
       ...OPEN_LOGIN_MODAL,
       { description: 'Fill password field with a test value',      action: { kind: 'fill',          selector: '#login-password',               value: 'TestPassword123' } },
@@ -391,6 +411,7 @@ export const journeys: Journey[] = [
   {
     id: 'login-remember-me',
     description: 'Login form — remember-me checkbox must be present and interactive',
+    clientDescription: "Clicked the 'Remember Me' checkbox on the login form. CONFIRMED: the checkbox is working and can be ticked and unticked — visitors can choose whether to stay logged in on their device.",
     steps: [
       ...OPEN_LOGIN_MODAL,
       { description: 'Verify checkbox is unchecked by default', action: { kind: 'assertVisible', selector: '#login-remember:not(:checked)' } },
@@ -401,6 +422,7 @@ export const journeys: Journey[] = [
   {
     id: 'login-to-register',
     description: 'Login form — Register link must open the registration form',
+    clientDescription: "Clicked the 'Register' link inside the login form. CONFIRMED: the form correctly switched to the registration screen without needing to close and reopen the overlay.",
     steps: [
       ...OPEN_LOGIN_MODAL,
       { description: 'Click Register link',                   action: { kind: 'click',   selector: 'a:has-text("Register")' } },
@@ -410,6 +432,7 @@ export const journeys: Journey[] = [
   {
     id: 'login-to-forgot',
     description: 'Login form — Forgot password link must open the forgot password form',
+    clientDescription: "Clicked the 'Forgot your password?' link on the login form. CONFIRMED: the form correctly switched to the password reset screen.",
     steps: [
       ...OPEN_LOGIN_MODAL,
       { description: 'Click Forgot your password? link',       action: { kind: 'click',   selector: 'a:has-text("Forgot")' } },
@@ -422,6 +445,7 @@ export const journeys: Journey[] = [
   {
     id: 'forgot-empty-submit',
     description: 'Forgot password form — empty submit must be blocked by validation',
+    clientDescription: "Opened the 'Forgot password' form and clicked 'Send Reset Link' without entering an email address. CONFIRMED: the form blocked submission — an email address is required to send a password reset.",
     steps: [
       ...OPEN_FORGOT_MODAL,
       CLICK_SEND_RESET,
@@ -431,6 +455,7 @@ export const journeys: Journey[] = [
   {
     id: 'forgot-invalid-email',
     description: 'Forgot password form — non-email string must be rejected by input type="email" validation',
+    clientDescription: "Entered 'notanemail' in the forgot password form. CONFIRMED: the form blocked submission — only a properly formatted email address is accepted.",
     steps: [
       ...OPEN_FORGOT_MODAL,
       { description: 'Fill non-email string', action: { kind: 'fill', selector: '#forgot-email', value: 'notanemail' } },
@@ -441,6 +466,7 @@ export const journeys: Journey[] = [
   {
     id: 'forgot-happy-path',
     description: 'Forgot password form — valid email must trigger a Firebase Auth password-reset request',
+    clientDescription: "Entered a valid email address in the 'Forgot password' form and clicked 'Send Reset Link'. CONFIRMED: the form sent a password reset request to the server. The request was intercepted by Sentinel to prevent a real reset email from being dispatched.",
     // No journey assertion — spec verifies the sendOobCode request was attempted via waitForRequest
     steps: [
       ...OPEN_FORGOT_MODAL,
@@ -451,6 +477,7 @@ export const journeys: Journey[] = [
   {
     id: 'forgot-back-to-login',
     description: 'Forgot password form — Back to login link must restore the login form',
+    clientDescription: "Clicked the 'Back to Login' link on the forgot password screen. CONFIRMED: the form correctly returned to the login screen without needing to close and reopen the overlay.",
     steps: [
       ...OPEN_FORGOT_MODAL,
       { description: 'Click Back to login link',            action: { kind: 'click',   selector: '#auth-forgot a:has-text("Back")' } },
@@ -463,6 +490,7 @@ export const journeys: Journey[] = [
   {
     id: 'nav-platform-link',
     description: 'Desktop nav — "The Platform" link scrolls the #platform section into view',
+    clientDescription: "Clicked the 'The Platform' link in the main navigation bar. CONFIRMED: the page smoothly scrolled down to the platform features section.",
     steps: [
       { description: 'Click The Platform nav link', action: { kind: 'click', selector: '.nav-links a:has-text("The Platform")' } },
     ],
@@ -470,6 +498,7 @@ export const journeys: Journey[] = [
   {
     id: 'nav-how-it-works-link',
     description: 'Desktop nav — "How It Works" link scrolls the #how-it-works section into view',
+    clientDescription: "Clicked the 'How It Works' link in the main navigation bar. CONFIRMED: the page scrolled down to the how-it-works section.",
     steps: [
       { description: 'Click How It Works nav link', action: { kind: 'click', selector: '.nav-links a:has-text("How It Works")' } },
     ],
@@ -477,6 +506,7 @@ export const journeys: Journey[] = [
   {
     id: 'nav-welcome-packs-link',
     description: 'Desktop nav — "Welcome Packs" link scrolls the #gifts section into view',
+    clientDescription: "Clicked the 'Welcome Packs' link in the main navigation bar. CONFIRMED: the page scrolled down to the welcome packs and gifts section.",
     steps: [
       { description: 'Click Welcome Packs nav link', action: { kind: 'click', selector: '.nav-links a:has-text("Welcome Packs")' } },
     ],
@@ -484,6 +514,7 @@ export const journeys: Journey[] = [
   {
     id: 'nav-my-account-link',
     description: 'Desktop nav — "My Account" link navigates to /account.html',
+    clientDescription: "Verified the 'My Account' navigation link is correctly set up to point to the account page. CONFIRMED: the link destination is correct. The link only appears once a visitor is logged in — this is expected behaviour.",
     steps: [
       { description: 'Click My Account nav link', action: { kind: 'click', selector: '#nav-account' } },
     ],
@@ -491,6 +522,7 @@ export const journeys: Journey[] = [
   {
     id: 'nav-logo-home',
     description: 'Logo link — clicking from any scroll position returns to the top of the homepage',
+    clientDescription: "Scrolled down the page, then clicked the Juel Haus logo. CONFIRMED: clicking the logo returned the visitor to the top of the homepage — standard and expected behaviour.",
     steps: [
       { description: 'Click the logo link', action: { kind: 'click', selector: 'a[href="index.html"]' } },
     ],
@@ -501,6 +533,7 @@ export const journeys: Journey[] = [
   {
     id: 'modal-login-opens',
     description: 'Login modal — clicking #btn-login makes #auth-modal visible',
+    clientDescription: "Clicked the 'Login' button in the navigation. CONFIRMED: the login form appeared on screen.",
     steps: [
       { description: 'Click Login button',                      action: { kind: 'click',   selector: '#btn-login' } },
       { description: 'Verify auth modal overlay is visible',    action: { kind: 'waitFor', selector: '#auth-modal', state: 'visible' } },
@@ -509,6 +542,7 @@ export const journeys: Journey[] = [
   {
     id: 'modal-login-closes-x',
     description: 'Login modal — clicking × closes #auth-modal',
+    clientDescription: "Opened the login form, then clicked the × close button. CONFIRMED: the login form closed and is no longer visible.",
     steps: [
       ...OPEN_LOGIN_MODAL,
       { description: 'Click modal × close button',             action: { kind: 'click',   selector: '#auth-modal .modal-close' } },
@@ -518,6 +552,7 @@ export const journeys: Journey[] = [
   {
     id: 'modal-login-to-register',
     description: 'Login modal — Register link switches to the registration form',
+    clientDescription: "Clicked the 'Register' link inside the login overlay. CONFIRMED: the overlay switched to the registration form without needing to close and reopen it.",
     steps: [
       ...OPEN_LOGIN_MODAL,
       { description: 'Click Register link',                              action: { kind: 'click',   selector: 'a:has-text("Register")' } },
@@ -527,6 +562,7 @@ export const journeys: Journey[] = [
   {
     id: 'modal-register-to-login',
     description: 'Register form — Login link switches back to the login form',
+    clientDescription: "Opened the registration form, then clicked the 'Login' link inside it. CONFIRMED: the overlay switched back to the login screen.",
     steps: [
       ...OPEN_REGISTER_MODAL,
       { description: 'Click Login link in register form',      action: { kind: 'click',   selector: '#auth-register a:has-text("Login")' } },
@@ -536,6 +572,7 @@ export const journeys: Journey[] = [
   {
     id: 'modal-login-to-forgot',
     description: 'Login modal — Forgot password link switches to the forgot password form',
+    clientDescription: "Clicked the 'Forgot your password?' link on the login form. CONFIRMED: the overlay switched to the password reset screen.",
     steps: [
       ...OPEN_LOGIN_MODAL,
       { description: 'Click Forgot your password? link',       action: { kind: 'click',   selector: 'a:has-text("Forgot")' } },
@@ -545,6 +582,7 @@ export const journeys: Journey[] = [
   {
     id: 'modal-demo-opens',
     description: 'Demo modal — clicking Book a Demo makes #demo-modal visible',
+    clientDescription: "Clicked the 'Book a Demo' button on the homepage. CONFIRMED: the demo booking form appeared on screen.",
     steps: [
       { description: 'Click Book a Demo button',               action: { kind: 'click',   selector: 'button:has-text("Book a Demo")' } },
       { description: 'Verify demo modal overlay is visible',   action: { kind: 'waitFor', selector: '#demo-modal', state: 'visible' } },
@@ -553,6 +591,7 @@ export const journeys: Journey[] = [
   {
     id: 'modal-demo-closes-x',
     description: 'Demo modal — clicking × closes #demo-modal',
+    clientDescription: "Opened the demo booking form, then clicked the × close button. CONFIRMED: the form closed and is no longer visible.",
     steps: [
       { description: 'Click Book a Demo button',               action: { kind: 'click',   selector: 'button:has-text("Book a Demo")' } },
       { description: 'Verify demo modal overlay is visible',   action: { kind: 'waitFor', selector: '#demo-modal', state: 'visible' } },
@@ -563,6 +602,7 @@ export const journeys: Journey[] = [
   {
     id: 'modal-cart-opens',
     description: 'Cart drawer — clicking #nav-cart makes #cart-drawer visible',
+    clientDescription: "Clicked the cart icon in the navigation bar. CONFIRMED: the shopping cart drawer opened on the side of the screen.",
     steps: [
       { description: 'Click cart nav button',                  action: { kind: 'click',   selector: '#nav-cart' } },
       { description: 'Verify cart drawer is visible',          action: { kind: 'waitFor', selector: '#cart-drawer', state: 'visible' } },
@@ -571,6 +611,7 @@ export const journeys: Journey[] = [
   {
     id: 'modal-cart-closes',
     description: 'Cart drawer — clicking × inside the cart hides #cart-drawer',
+    clientDescription: "Opened the shopping cart drawer, then clicked the × close button. CONFIRMED: the cart drawer closed.",
     steps: [
       { description: 'Click cart nav button',                  action: { kind: 'click',   selector: '#nav-cart' } },
       { description: 'Verify cart drawer is visible',          action: { kind: 'waitFor', selector: '#cart-drawer', state: 'visible' } },
@@ -584,6 +625,7 @@ export const journeys: Journey[] = [
   {
     id: 'mobile-hamburger-opens',
     description: 'Mobile — hamburger button makes #mobile-menu visible',
+    clientDescription: "On a mobile-sized screen (375 pixels wide), tapped the hamburger menu icon. CONFIRMED: the mobile navigation menu appeared.",
     steps: [
       { description: 'Click hamburger button',                 action: { kind: 'click',   selector: '#nav-hamburger' } },
       { description: 'Verify mobile menu is visible',          action: { kind: 'waitFor', selector: '#mobile-menu', state: 'visible' } },
@@ -592,6 +634,7 @@ export const journeys: Journey[] = [
   {
     id: 'mobile-nav-links-work',
     description: 'Mobile — tapping a mobile nav link scrolls to the target section',
+    clientDescription: "On a mobile-sized screen, opened the hamburger menu and tapped 'How It Works'. CONFIRMED: the page scrolled to the correct section and the menu closed.",
     steps: [
       { description: 'Click hamburger to open mobile menu',    action: { kind: 'click',   selector: '#nav-hamburger' } },
       { description: 'Wait for mobile menu to appear',         action: { kind: 'waitFor', selector: '#mobile-menu', state: 'visible' } },

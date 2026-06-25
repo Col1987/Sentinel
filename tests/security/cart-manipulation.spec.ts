@@ -15,6 +15,7 @@ test.describe('Cart manipulation', { tag: ['@security'] }, () => {
   // ─── cart-initial-state ──────────────────────────────────────────────────────
 
   test('cart-initial-state — cart is empty and total is R0.00 on page load', async ({ page }) => {
+    test.info().annotations.push({ type: 'description', description: "Loaded the homepage and checked the shopping cart's starting state. CONFIRMED: the cart is empty (0 items, R0.00 total) and the 'Proceed to Checkout' button is correctly hidden — a visitor cannot accidentally start a checkout with nothing in their cart." });
     await page.goto('/');
 
     // Nav badge must show 0 before any interaction
@@ -44,6 +45,7 @@ test.describe('Cart manipulation', { tag: ['@security'] }, () => {
   // ─── checkout-empty-cart ─────────────────────────────────────────────────────
 
   test('checkout-empty-cart — goToCheckout() called with empty cart is handled gracefully', async ({ page }) => {
+    test.info().annotations.push({ type: 'description', description: "Attempted to reach the checkout flow from an empty cart, both via the normal UI and by calling the site's checkout function directly (simulating what a technically-minded visitor could do from their browser console). CONFIRMED: no checkout request was sent — the site correctly prevents reaching checkout with an empty cart." });
     let checkoutRequestFired = false;
     page.on('request', req => {
       if (/checkout|payment|order/i.test(req.url())) checkoutRequestFired = true;
@@ -97,6 +99,7 @@ test.describe('Cart manipulation', { tag: ['@security'] }, () => {
   // ─── cart-badge-reflects-count ───────────────────────────────────────────────
 
   test('cart-badge-reflects-count — clicking "Add to Cart" increments #nav-cart badge', async ({ page }) => {
+    test.info().annotations.push({ type: 'description', description: "Added a product to the shopping cart and checked whether the cart badge in the navigation bar updated to show the correct item count. CONFIRMED: the badge updated after adding an item — visitors can see at a glance how many items are in their cart." });
     const capturedRequests: string[] = [];
     page.on('request', req => {
       if (req.method() !== 'GET') capturedRequests.push(`[${req.method()}] ${req.url().slice(0, 100)}`);

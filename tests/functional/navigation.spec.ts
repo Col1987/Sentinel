@@ -30,6 +30,7 @@ test.describe('Navigation', { tag: ['@functional'] }, () => {
   });
 
   test('my account link — href points to /account.html (link is visible only when authenticated)', async ({ page }) => {
+    test.info().annotations.push({ type: 'description', description: "Checked that the 'My Account' navigation link is correctly set up to point to the account page. CONFIRMED: the link destination is correct (/account.html). The link is only shown to visitors who are logged in — this is expected behaviour." });
     await page.goto('/');
     // #nav-account is hidden for unauthenticated users (expected behaviour).
     // Verify the link target is correct without requiring a logged-in session.

@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { Page, expect } from '@playwright/test';
+import { Page, expect, test } from '@playwright/test';
 import type { Journey, Action } from '../config/journeys';
 
 const SCREENSHOT_DIR = 'reports/screenshots';
@@ -42,6 +42,8 @@ async function executeStep(page: Page, action: Action): Promise<void> {
 
 export async function runJourney(journey: Journey, page: Page): Promise<void> {
   fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
+
+  test.info().annotations.push({ type: 'description', description: journey.clientDescription });
 
   for (let i = 0; i < journey.steps.length; i++) {
     const step = journey.steps[i];

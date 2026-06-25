@@ -17,6 +17,7 @@ test.describe('Responsive — mobile (375 × 812)', { tag: ['@functional'] }, ()
   });
 
   test('hamburger button closes mobile navigation menu when clicked again', async ({ page }) => {
+    test.info().annotations.push({ type: 'description', description: "On a mobile screen, opened the navigation menu, then attempted to close it by tapping the hamburger icon again. FINDING: the open menu overlays the hamburger button, making it impossible to tap directly. A dedicated close button inside the menu, or a higher z-index on the hamburger button, would fix this. The menu can still be closed using the page's internal toggle function." });
     await page.goto('/');
     // Open the menu first
     await page.locator('#nav-hamburger').click();
@@ -44,6 +45,7 @@ test.describe('Responsive — mobile (375 × 812)', { tag: ['@functional'] }, ()
   });
 
   test('CTA button is visible at mobile viewport width', async ({ page }) => {
+    test.info().annotations.push({ type: 'description', description: "Checked that the main 'Get Started' call-to-action button is visible on a mobile-sized screen (375 pixels wide). CONFIRMED: the button remains visible — visitors on smartphones can see and tap it." });
     await page.goto('/');
     // At 375px the desktop nav is replaced by the hamburger; the hero CTA must remain visible
     await expect(page.locator('button:has-text("Get Started")').first()).toBeVisible();

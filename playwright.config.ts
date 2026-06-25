@@ -9,6 +9,7 @@ export default defineConfig({
   workers: process.env.CI ? 1 : 4,
   reporter: [
     ['list'],
+    ['./src/reports/sentinel-reporter.ts'],
     ['html', { outputFolder: 'reports/playwright-html', open: 'never' }],
   ],
   use: {

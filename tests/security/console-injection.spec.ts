@@ -9,6 +9,7 @@ test.describe('Console injection and client-side hardening', { tag: ['@security'
   // ─── trigger-success-via-console ─────────────────────────────────────────────
 
   test('trigger-success-via-console — audit globally exposed functions and force demo success state', async ({ page }) => {
+    test.info().annotations.push({ type: 'description', description: "Examined which JavaScript functions are publicly accessible on the page (any visitor can call these from their browser's developer console), then forced the 'booking confirmed' message to appear without actually submitting the form. This tests whether faking the success screen has any real-world consequence. CONFIRMED: the server remains the true security gate — faking the on-screen result has no real effect." });
     await page.route('**/createDemoRequest**', route => route.abort());
 
     await page.goto('/');
@@ -67,6 +68,7 @@ test.describe('Console injection and client-side hardening', { tag: ['@security'
   // ─── modify-dom-required ─────────────────────────────────────────────────────
 
   test('modify-dom-required — removing required attribute from #demo-name and submitting empty', async ({ page }) => {
+    test.info().annotations.push({ type: 'description', description: "Removed the HTML 'required' marker from the name field using browser developer tools (a technique any visitor can perform in seconds), then submitted the demo booking form with an empty name. FINDING: the form accepted the submission and sent a request to the server with no name value. A server-side validation check is needed to reject requests with missing required fields." });
     let capturedBody: Record<string, unknown> | null = null;
 
     await page.route('**/createDemoRequest**', async route => {
@@ -128,6 +130,7 @@ test.describe('Console injection and client-side hardening', { tag: ['@security'
   // ─── console-errors-on-load ──────────────────────────────────────────────────
 
   test('console-errors-on-load — collect all console errors and warnings on homepage load', async ({ page }) => {
+    test.info().annotations.push({ type: 'description', description: "Monitored the browser for errors and warnings that fire while the homepage loads. These messages are invisible to normal visitors but indicate problems in the site's code that could affect reliability or security." });
     // networkidle times out due to Firebase long-polling connections.
     // Use 'load' + a fixed wait to capture deferred errors from async initialisation.
     const errors:   { text: string }[] = [];

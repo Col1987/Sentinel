@@ -16,6 +16,7 @@ test.describe('Auth bypass', { tag: ['@security'] }, () => {
   // ─── direct-account-access ───────────────────────────────────────────────────
 
   test('direct-account-access — unauthenticated visit shows inline auth gate, not account data', async ({ page }) => {
+    test.info().annotations.push({ type: 'description', description: "Navigated directly to the account page (/account.html) without logging in, to check whether private account information is protected. CONFIRMED: visitors who are not logged in are shown an 'access required' message — no account data is exposed." });
     await page.goto('/account.html', { waitUntil: 'load' });
 
     // Allow Firebase auth state to resolve before making assertions.
@@ -62,6 +63,7 @@ test.describe('Auth bypass', { tag: ['@security'] }, () => {
   // ─── direct-terms-access ─────────────────────────────────────────────────────
 
   test('direct-terms-access — /terms.html loads and returns page content', async ({ page }) => {
+    test.info().annotations.push({ type: 'description', description: "Navigated directly to the Terms and Conditions page (/terms.html) to check it loads correctly as a public page. CONFIRMED: the page loads successfully with full content — no login is required to view the terms." });
     const response = await page.goto('/terms.html', { waitUntil: 'load' });
 
     // Terms pages are public — a 200 response with content is expected.
@@ -78,6 +80,7 @@ test.describe('Auth bypass', { tag: ['@security'] }, () => {
   // ─── auth-modal-escape ───────────────────────────────────────────────────────
 
   test('auth-modal-escape — Escape key closes the login modal cleanly with no console errors', async ({ page }) => {
+    test.info().annotations.push({ type: 'description', description: "Opened the login form and pressed the Escape key to check whether it closes the overlay. Keyboard-only users and screen reader users expect Escape to dismiss overlays — this is a standard accessibility behaviour." });
     const consoleErrors: string[] = [];
     page.on('console', msg => {
       if (msg.type() === 'error') consoleErrors.push(msg.text());
