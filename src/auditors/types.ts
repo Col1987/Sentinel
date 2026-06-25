@@ -17,5 +17,6 @@ export interface AuditResult {
   timestamp: string;
   durationMs: number;
   passed: boolean;
+  warning?: boolean;
   findings: AuditFinding[];
 }

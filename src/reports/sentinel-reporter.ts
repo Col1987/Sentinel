@@ -157,6 +157,18 @@ const RULE_GUIDANCE: Record<string, Guidance> = {
     why: 'Network-level failures mean the resource is completely unreachable — the server may be offline, the domain may have expired, or the URL may contain a typo.',
     fix: 'Verify the URL is correctly formed. Check whether the target domain is still registered and the server is reachable.',
   },
+  'Form control with no accessible label': {
+    why: 'Screen readers announce form fields by their accessible label. Without one, visually impaired users hear only "edit text" or "combo box" with no indication of what information to enter. This affects WCAG 2.1 compliance (Success Criterion 1.3.1 and 4.1.2) and excludes users who rely on assistive technology.',
+    fix: 'Add a <label> element with a for attribute matching each input\'s id, or add an aria-label attribute directly to the input. For example: <label for=\'demo-name\'>Full name</label> or <input id=\'demo-name\' aria-label=\'Full name\'>.',
+  },
+  'Interactive control with no accessible name': {
+    why: 'Buttons without a text label or aria-label are announced by screen readers as simply "button" with no indication of what they do. This prevents keyboard and assistive-technology users from activating controls intentionally.',
+    fix: 'Add visible text inside the button element, or add an aria-label attribute describing the action — for example, aria-label="Close dialog". The label must match what the button does when activated.',
+  },
+  'Link with no accessible name': {
+    why: 'Screen reader users navigate pages by cycling through links. A link with no text or aria-label is announced only as "link", making navigation impossible for users who depend on assistive technology.',
+    fix: 'Ensure every anchor element contains visible text. For icon-only links, add an aria-label describing the destination — for example, aria-label="Visit our Instagram page".',
+  },
 };
 
 const DEFAULT_GUIDANCE: Guidance = {
@@ -449,11 +461,20 @@ function renderAuditSection(auditResults: AuditResult[]): string {
       body = `<div class="findings">${sortedGroups.map(([msg, f]) => renderRuleGroup(msg, f)).join('')}</div>`;
     }
 
-    const statusBadge = result.passed
+    const isWarning = !result.passed || result.warning;
+    const statusBadge = result.passed && !result.warning
       ? `<span class="status-badge status-pass">Pass</span>`
-      : `<span class="status-badge status-fail">Fail</span>`;
+      : result.warning
+        ? `<span class="status-badge status-warn">Review</span>`
+        : `<span class="status-badge status-fail">Fail</span>`;
 
-    return `<div class="auditor-card ${result.passed ? 'card-pass' : 'card-fail'}">
+    const cardClass = result.passed && !result.warning
+      ? 'card-pass'
+      : result.warning
+        ? 'card-warn'
+        : 'card-fail';
+
+    return `<div class="auditor-card ${cardClass}">
       <div class="auditor-header">
         <h3 class="auditor-name">${escapeHtml(result.auditor)}</h3>
         ${statusBadge}
@@ -598,10 +619,12 @@ body {
 .auditor-header { display: flex; align-items: center; gap: 0.75rem; padding: 1rem 1.5rem; border-bottom: 1px solid #f1f5f9; }
 .card-pass .auditor-header { border-left: 4px solid #16a34a; }
 .card-fail .auditor-header { border-left: 4px solid #dc2626; }
+.card-warn .auditor-header { border-left: 4px solid #d97706; }
 .auditor-name { font-size: 0.875rem; font-weight: 700; text-transform: capitalize; color: #0f172a; }
 .status-badge { font-size: 0.6rem; font-weight: 700; padding: 0.25em 0.65em; border-radius: 9999px; text-transform: uppercase; letter-spacing: 0.06em; }
 .status-pass { background: #dcfce7; color: #15803d; }
 .status-fail { background: #fee2e2; color: #b91c1c; }
+.status-warn { background: #fef3c7; color: #92400e; }
 .auditor-meta { margin-left: auto; font-size: 0.75rem; color: #94a3b8; }
 .passed-body { display: flex; align-items: center; gap: 0.625rem; padding: 1.25rem 1.5rem; color: #15803d; font-size: 0.875rem; font-weight: 500; }
 .pass-icon { width: 20px; height: 20px; flex-shrink: 0; }
