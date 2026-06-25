@@ -2,6 +2,6 @@ node_modules/
 dist/
 /reports/
 .env
-.env.local
+.env.*
 playwright-report/
 test-results/
