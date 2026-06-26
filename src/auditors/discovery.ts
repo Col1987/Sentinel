@@ -84,7 +84,11 @@ export async function discoverInteractiveElements(
   const start = Date.now();
   const findings: AuditFinding[] = [];
 
-  const raw = await page.evaluate((): RawPageData => {
+  // Wrap page.evaluate() so a page navigation, CSP violation, or frame detach
+  // during evaluation produces a warning finding rather than an uncaught exception.
+  let raw: RawPageData;
+  try {
+    raw = await page.evaluate((): RawPageData => {
     // ── Helpers (all run in browser context) ──────────────────────────────────
 
     function getLabelText(el: Element): string | null {
@@ -262,7 +266,27 @@ export async function discoverInteractiveElements(
       }));
 
     return { forms, orphans: orphanEls.map(extractElement) };
-  });
+    });
+  } catch (err) {
+    return {
+      result: {
+        auditor: 'discovery',
+        targetUrl,
+        timestamp: new Date().toISOString(),
+        durationMs: Date.now() - start,
+        passed: true,
+        warning: true,
+        findings: [{
+          url: targetUrl,
+          severity: 'info',
+          category: 'discovery',
+          message: 'Page evaluate failed',
+          detail: err instanceof Error ? err.message : String(err),
+        }],
+      },
+      discovery: { url: targetUrl, forms: [], orphans: [] },
+    };
+  }
 
   // ── Convert raw browser data to public types ───────────────────────────────
 

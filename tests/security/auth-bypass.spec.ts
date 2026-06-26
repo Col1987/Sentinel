@@ -19,8 +19,10 @@ test.describe('Auth bypass', { tag: ['@security'] }, () => {
     test.info().annotations.push({ type: 'description', description: "Navigated directly to the account page (/account.html) without logging in, to check whether private account information is protected. CONFIRMED: visitors who are not logged in are shown an 'access required' message — no account data is exposed." });
     await page.goto('/account.html', { waitUntil: 'load' });
 
-    // Allow Firebase auth state to resolve before making assertions.
-    await page.waitForTimeout(3_000);
+    // Wait for Firebase's onAuthStateChanged to fire and reveal the auth gate.
+    // A fixed delay is a race condition on slow connections; waiting for the element is deterministic.
+    // .catch() lets us continue if it never appears — the assertion below will handle that case.
+    await page.locator('#not-logged-in').waitFor({ state: 'visible', timeout: 8_000 }).catch(() => {});
 
     const finalUrl = page.url();
 
@@ -98,8 +100,9 @@ test.describe('Auth bypass', { tag: ['@security'] }, () => {
 
     await page.keyboard.press('Escape');
 
-    // Allow the dismiss animation / JS handler to complete
-    await page.waitForTimeout(500);
+    // Use a conditional wait instead of a fixed animation delay: resolves immediately
+    // if the modal closes, times out after 1s if it stays open (expected finding path).
+    await page.locator('#auth-modal').waitFor({ state: 'hidden', timeout: 1_000 }).catch(() => {});
 
     const modalAfterEscape = await page.locator('#auth-modal').isVisible();
 

@@ -27,6 +27,8 @@ export async function loginAsAdmin(page: Page): Promise<void> {
   // Allow up to 20 s for the auth round-trip + redirect.
   await page.waitForURL('**/admin.html', { timeout: 20_000 });
 
-  // Let Firestore subscriptions and admin data finish settling before assertions.
-  await page.waitForTimeout(2_500);
+  // #admin-auth-overlay covers the dashboard while Firebase resolves the admin claim.
+  // Waiting for it to disappear is deterministic; the old fixed 2.5s delay was a race
+  // condition that could fire before auth completed on slow CI machines.
+  await page.locator('#admin-auth-overlay').waitFor({ state: 'hidden', timeout: 15_000 });
 }

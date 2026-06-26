@@ -95,7 +95,13 @@ test.describe('Console injection and client-side hardening', { tag: ['@security'
 
     // Submit the form with an empty name field.
     await page.locator('#demo-submit-btn').click();
-    await page.waitForTimeout(2_000);
+
+    // Wait for the intercepted createDemoRequest to fire (if the JS guard didn't hold),
+    // rather than sleeping a fixed 2s. Times out after 2s if no request fires (guard held).
+    await page.waitForRequest(
+      req => req.url().includes('createDemoRequest'),
+      { timeout: 2_000 },
+    ).catch(() => {});
 
     if (capturedBody !== null) {
       // The form bypassed all client-side validation and reached the backend.

@@ -11,6 +11,14 @@ const navLogoHome     = find('nav-logo-home');
 
 test.describe('Navigation', { tag: ['@functional'] }, () => {
 
+  // .nav-links is the desktop nav bar — hidden at mobile viewports where the
+  // hamburger replaces it. Skip these tests when the active viewport is narrow.
+  test.beforeEach(({ viewport }) => {
+    if ((viewport?.width ?? 1280) < 768) {
+      test.skip(true, 'Desktop-only: .nav-links is hidden below 768px — see responsive.spec.ts for mobile nav tests');
+    }
+  });
+
   test('platform link — #platform section scrolls into view', async ({ page }) => {
     await page.goto('/');
     await runJourney(navPlatform, page);

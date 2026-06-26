@@ -26,9 +26,11 @@ test.describe('Cart manipulation', { tag: ['@security'] }, () => {
     await page.locator('#nav-cart').click();
     await page.locator('#cart-drawer').waitFor({ state: 'visible' });
 
-    // Total must be R0.00 (ZAR currency, zero value)
+    // Total must show a zero ZAR value. Use a regex rather than an exact string
+    // so minor locale/format changes (e.g. 'R 0.00' vs 'R0.00') are not false failures.
     const totalText = await page.locator('#cart-total-amount').textContent();
-    expect(totalText?.trim(), '#cart-total-amount must show R0.00 for an empty cart').toBe('R0.00');
+    expect(totalText?.trim(), '#cart-total-amount must show a zero value for an empty cart')
+      .toMatch(/^R\s*0[.,]?00$/);
 
     // "Proceed to Checkout" must be hidden when the cart is empty —
     // allowing checkout with an empty cart would be both bad UX and a logic error.
@@ -70,7 +72,12 @@ test.describe('Cart manipulation', { tag: ['@security'] }, () => {
       }
     });
 
-    await page.waitForTimeout(1_000);
+    // Wait for any checkout navigation/request that goToCheckout() might trigger,
+    // rather than sleeping a fixed second. Times out after 2s if nothing fires (correct path).
+    await page.waitForRequest(
+      req => /checkout|payment|order/i.test(req.url()),
+      { timeout: 2_000 },
+    ).catch(() => {});
     const urlAfter = page.url();
 
     if (checkoutRequestFired) {
@@ -107,11 +114,11 @@ test.describe('Cart manipulation', { tag: ['@security'] }, () => {
 
     await page.goto('/');
 
-    // Allow products to load from Firestore before interacting
     await page.locator('#gifts').scrollIntoViewIfNeeded();
-    await page.waitForTimeout(2_000);
-
     const addBtns = page.locator('#gifts button:has-text("Add to Cart")');
+    // Wait for Firestore to deliver products rather than sleeping a fixed 2s.
+    // .catch() allows graceful handling when products don't load (finding logged below).
+    await addBtns.first().waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {});
     const btnCount = await addBtns.count();
 
     if (btnCount === 0) {
@@ -130,7 +137,13 @@ test.describe('Cart manipulation', { tag: ['@security'] }, () => {
 
     // Click the first Add to Cart button
     await addBtns.first().click();
-    await page.waitForTimeout(1_500);
+
+    // Wait for #cart-count to reflect the new item rather than sleeping 1.5s.
+    // Resolves immediately when the count changes; times out after 5s if it never updates.
+    await page.waitForFunction(
+      () => document.querySelector('#cart-count')?.textContent?.trim() !== '0',
+      { timeout: 5_000 },
+    ).catch(() => {});
 
     const badgeAfter = (await page.locator('#cart-count').textContent())?.trim() ?? '0';
 

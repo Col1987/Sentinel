@@ -13,7 +13,27 @@ export async function auditAccessibility(page: Page, targetUrl: string): Promise
   const start = Date.now();
   const findings: AuditFinding[] = [];
 
-  const { violations } = await new AxeBuilder({ page }).analyze();
+  // Wrap analyze() so a CSP block, frame detach, or axe internal error produces
+  // a finding rather than an uncaught exception that kills the test run.
+  let violations: Awaited<ReturnType<AxeBuilder['analyze']>>['violations'];
+  try {
+    ({ violations } = await new AxeBuilder({ page }).analyze());
+  } catch (err) {
+    return {
+      auditor: 'accessibility',
+      targetUrl,
+      timestamp: new Date().toISOString(),
+      durationMs: Date.now() - start,
+      passed: false,
+      findings: [{
+        url: targetUrl,
+        severity: 'info',
+        category: 'accessibility',
+        message: 'axe-core analysis failed',
+        detail: err instanceof Error ? err.message : String(err),
+      }],
+    };
+  }
 
   for (const violation of violations) {
     const severity: Severity = IMPACT_MAP[violation.impact ?? ''] ?? 'info';
