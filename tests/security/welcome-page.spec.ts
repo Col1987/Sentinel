@@ -45,7 +45,10 @@ test.describe('Welcome page security', { tag: ['@security'] }, () => {
     for (const paramName of GUEST_PARAM_PROBES) {
       const url = `/welcome.html?${paramName}=${encodeURIComponent(TEST_GUEST_VALUE)}`;
       await page.goto(url, GOTO_OPTS).catch(() => {});
-      await page.waitForTimeout(1_500);
+      // goto(waitUntil:'load') already guarantees DOM + synchronous scripts are done.
+      // waitForLoadState('domcontentloaded') resolves immediately in the happy path;
+      // provides a 3 s ceiling only when goto was caught early due to slow resources.
+      await page.waitForLoadState('domcontentloaded', { timeout: 3_000 }).catch(() => {});
 
       const bodyText = await page.evaluate(() => document.body.innerText.toLowerCase()).catch(() => '');
       const hasContent  = bodyText.includes('welcome') || bodyText.includes('pack') || bodyText.includes('guest');
@@ -66,7 +69,9 @@ test.describe('Welcome page security', { tag: ['@security'] }, () => {
     }
 
     const baseResponse = await page.goto('/welcome.html', GOTO_OPTS).catch(() => null);
-    await page.waitForTimeout(1_500);
+    // Waits for DOM to be parsed; resolves immediately if goto already achieved
+    // the load state. Captures any post-load pageerror events before the assertion.
+    await page.waitForLoadState('domcontentloaded', { timeout: 3_000 }).catch(() => {});
     const status = baseResponse?.status() ?? 0;
 
     if (status >= 400) {
@@ -94,7 +99,7 @@ test.describe('Welcome page security', { tag: ['@security'] }, () => {
     page.on('pageerror', err => pageErrors.push(err.message));
 
     await page.goto('/welcome.html', GOTO_OPTS).catch(() => {});
-    await page.waitForTimeout(2_000);
+    await page.waitForLoadState('domcontentloaded', { timeout: 3_000 }).catch(() => {});
 
     const bodyText = await page.evaluate(() => document.body.innerText.toLowerCase()).catch(() => '');
     const rawHtml  = await page.content().catch(() => '');
@@ -153,7 +158,9 @@ test.describe('Welcome page security', { tag: ['@security'] }, () => {
     for (const paramName of GUEST_PARAM_PROBES) {
       if (xssDialogFired) break;
       await page.goto(`/welcome.html?${paramName}=${encoded}`, GOTO_OPTS).catch(() => {});
-      await page.waitForTimeout(1_500);
+      // goto(waitUntil:'load') covers onerror execution — by load time the injected
+      // <img> has already attempted to fetch and fired onerror if XSS was reflected.
+      await page.waitForLoadState('domcontentloaded', { timeout: 3_000 }).catch(() => {});
     }
 
     // Check whether the raw XSS string appears unencoded in the rendered DOM.
@@ -187,7 +194,10 @@ test.describe('Welcome page security', { tag: ['@security'] }, () => {
       `/welcome.html?guest=${encodeURIComponent(TEST_GUEST_VALUE)}`,
       GOTO_OPTS,
     ).catch(() => {});
-    await page.waitForTimeout(2_000);
+    // In safe mode CF returns empty data — no guest content is rendered, so there is
+    // no dynamic insertion to wait for. waitForLoadState resolves immediately (already
+    // in load state) and adds zero delay in the happy path.
+    await page.waitForLoadState('domcontentloaded', { timeout: 3_000 }).catch(() => {});
 
     const visibleText = await page.evaluate(() => document.body.innerText).catch(() => '');
     const rawHtml     = await page.content().catch(() => '');
@@ -220,7 +230,9 @@ test.describe('Welcome page security', { tag: ['@security'] }, () => {
     });
 
     await page.goto(`/welcome.html?guest=${encodeURIComponent(TEST_GUEST_VALUE)}`, GOTO_OPTS).catch(() => {});
-    await page.waitForTimeout(2_000);
+    // In safe mode CF returns empty data — no QR asset is generated client-side,
+    // so there is nothing to wait for beyond DOMContentLoaded.
+    await page.waitForLoadState('domcontentloaded', { timeout: 3_000 }).catch(() => {});
 
     const rawHtml = await page.content().catch(() => '');
 
