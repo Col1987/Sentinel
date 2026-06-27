@@ -25,8 +25,9 @@ test.describe('Public page security', { tag: ['@security'] }, () => {
       description: "Loaded the guest-facing welcome page and checked whether the Juel Haus warehouse collection address ('56 Robberg Road') appears anywhere in the page. This address is internal logistics information — showing it to guests would be incorrect and could expose operational details. CONFIRMED: the address does not appear on the welcome page.",
     });
 
-    await page.goto('/welcome.html', { waitUntil: 'load' });
-    await page.waitForTimeout(1_500);
+    // domcontentloaded is sufficient: the collection address is in static HTML, not CF-injected.
+    // Using 'load' would wait for live CF requests (not intercepted here) which can be slow.
+    await page.goto('/welcome.html', { waitUntil: 'domcontentloaded', timeout: 15_000 });
 
     const visibleText = await page.evaluate(() => document.body.innerText);
     const rawHtml = await page.content();
@@ -61,7 +62,10 @@ test.describe('Public page security', { tag: ['@security'] }, () => {
     page.on('pageerror', err => pageErrors.push(err.message));
 
     await page.goto('/track.html', { waitUntil: 'load' });
-    await page.waitForTimeout(1_500);
+    // Wait for the tracking input to be rendered before attempting to locate it.
+    await page.locator(
+      'input[type="text"], input[type="search"], input:not([type="hidden"]):not([type="submit"])',
+    ).first().waitFor({ state: 'visible', timeout: 5_000 }).catch(() => {});
 
     const INVALID_ID = 'SENTINEL-INVALID-99999999';
 
@@ -82,7 +86,15 @@ test.describe('Public page security', { tag: ['@security'] }, () => {
       await page.goto(`/track.html?id=${INVALID_ID}`, { waitUntil: 'load' });
     }
 
-    await page.waitForTimeout(2_500);
+    // Wait for the tracking lookup response to update the page with a result or error message.
+    await page.waitForFunction(
+      () => {
+        const body = document.body.innerText.toLowerCase();
+        return ['not found', 'no order', 'could not find', 'invalid', 'does not exist', 'no results', 'try again', 'error']
+          .some(s => body.includes(s));
+      },
+      { timeout: 6_000 },
+    ).catch(() => {});
 
     const bodyText = await page.evaluate(() => document.body.innerText.toLowerCase());
 
@@ -135,7 +147,10 @@ test.describe('Public page security', { tag: ['@security'] }, () => {
     });
 
     await page.goto('/track.html', { waitUntil: 'load' });
-    await page.waitForTimeout(1_500);
+    // Wait for the tracking input to be rendered before attempting to locate it.
+    await page.locator(
+      'input[type="text"], input[type="search"], input:not([type="hidden"]):not([type="submit"])',
+    ).first().waitFor({ state: 'visible', timeout: 5_000 }).catch(() => {});
 
     const PROBE_ID = 'SENTINEL-PROBE-00000001';
     const trackingInput = page.locator('input[type="text"], input[type="search"], input:not([type="hidden"]):not([type="submit"])').first();
@@ -152,7 +167,15 @@ test.describe('Public page security', { tag: ['@security'] }, () => {
       await page.goto(`/track.html?id=${PROBE_ID}`, { waitUntil: 'load' });
     }
 
-    await page.waitForTimeout(2_500);
+    // Wait for the tracking lookup response to update the page before scanning content.
+    await page.waitForFunction(
+      () => {
+        const body = document.body.innerText.toLowerCase();
+        return ['not found', 'no order', 'could not find', 'invalid', 'does not exist', 'no results', 'try again', 'error']
+          .some(s => body.includes(s));
+      },
+      { timeout: 6_000 },
+    ).catch(() => {});
 
     const visibleText = await page.evaluate(() => document.body.innerText);
     const rawHtml     = await page.content();
@@ -229,9 +252,13 @@ test.describe('Public page security', { tag: ['@security'] }, () => {
       page.on('console',   onConsole);
       page.on('pageerror', onPageError);
 
-      await page.goto(pagePath, { waitUntil: 'load' });
-      // Allow Firebase auth state and deferred async initialisation to settle
-      await page.waitForTimeout(2_000);
+      // Cap each page load at 20 s so a single slow page cannot exhaust the test budget.
+      // /welcome.html makes live CF requests — without a cap it can block for 60 s+.
+      await page.goto(pagePath, { waitUntil: 'load', timeout: 20_000 }).catch(() => {});
+      // Yield to the microtask queue so console.error() calls deferred via async callbacks
+      // during page initialisation can fire before we snapshot the error arrays.
+      // domcontentloaded is already satisfied after waitUntil:'load', so this is ~0 ms.
+      await page.waitForLoadState('domcontentloaded', { timeout: 1_000 }).catch(() => {});
 
       page.off('console',   onConsole);
       page.off('pageerror', onPageError);

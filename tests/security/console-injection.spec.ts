@@ -150,7 +150,12 @@ test.describe('Console injection and client-side hardening', { tag: ['@security'
     page.on('pageerror', err => pageErrors.push(err.message));
 
     await page.goto('/', { waitUntil: 'load' });
-    await page.waitForTimeout(3_000);
+    // Wait for Firebase auth initialisation to complete — auth state change populates the
+    // login/account nav. Can't use networkidle: Firebase long-polling keeps connections open.
+    await page.waitForFunction(
+      () => !!document.querySelector('#btn-login, #nav-account'),
+      { timeout: 5_000 },
+    ).catch(() => {});
 
     // Report unhandled JS exceptions — these always indicate a real defect.
     for (const msg of pageErrors) {

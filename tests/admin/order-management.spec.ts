@@ -80,7 +80,8 @@ test.describe('Admin order management', { tag: ['@admin'] }, () => {
     }
 
     await viewBtns.first().click();
-    await page.waitForTimeout(1_000);
+    // Wait for the order detail modal to become visible after clicking View.
+    await page.locator('#order-modal').waitFor({ state: 'visible', timeout: 5_000 }).catch(() => {});
 
     const modalVisible = await page.locator('#order-modal').isVisible().catch(() => false);
 

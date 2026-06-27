@@ -25,7 +25,10 @@ async function collectPageScripts(
   });
 
   await page.goto(pagePath, { waitUntil: 'load' });
-  await page.waitForTimeout(1_500);
+  // Wait for any dynamically injected <script> tags to finish loading after the load event.
+  // readyState === 'complete' is guaranteed after 'load' but waiting here captures scripts
+  // inserted in deferred callbacks before the inline script collection below runs.
+  await page.waitForFunction(() => document.readyState === 'complete', { timeout: 2_000 }).catch(() => {});
 
   const inlineJs = await page.evaluate(() =>
     Array.from(document.querySelectorAll('script:not([src])')).map(el => el.textContent ?? '').join('\n'),

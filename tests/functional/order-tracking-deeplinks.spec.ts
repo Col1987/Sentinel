@@ -20,6 +20,10 @@ async function requireVisible(
 }
 
 // Finds the order tracking input on /track.html.
+// Fragility note: /track.html has no stable form wrapper ID at time of writing, so this
+// selector matches the first visible text/search input on the page. It is safe while the
+// page has only one such input, but would match unintended fields if additional inputs are
+// added. Preferred fix: scope to a stable container (e.g. #track-form) once one is confirmed.
 async function findTrackingInput(page: import('@playwright/test').Page) {
   return page.locator(
     'input[type="text"]:visible, input[type="search"]:visible, ' +
