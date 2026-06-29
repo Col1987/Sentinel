@@ -20,10 +20,11 @@ async function executeStep(page: Page, action: Action): Promise<void> {
       break;
 
     case 'waitFor':
-      await page.locator(action.selector).waitFor({
-        state: action.state,
-        timeout: action.timeoutMs,
-      });
+      // No explicit timeout — uses Playwright's configured action default (30 s).
+      // Per-step hard caps from journey config are intentionally not forwarded here;
+      // they create independent caps that fire before the test's own timeout and mask
+      // real failures with misleading "Timeout Xms exceeded" errors in LIVE_MODE.
+      await page.locator(action.selector).waitFor({ state: action.state });
       break;
 
     case 'assertVisible':

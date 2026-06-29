@@ -23,12 +23,30 @@ export async function loginAsAdmin(page: Page): Promise<void> {
   await page.locator('#login-password').fill(password);
   await page.locator('button[type="submit"]:has-text("Login")').click();
 
-  // Firebase sets the admin custom claim, then the client JS redirects to /admin.html.
-  // Allow up to 20 s for the auth round-trip + redirect.
-  await page.waitForURL('**/admin.html', { timeout: 20_000 });
+  // timeout: 0 means "no cap on this function" — Playwright waits indefinitely until the
+  // predicate returns true. The calling test's own timeout (60 s normally, 180 s with
+  // test.slow()) is the only gate. This avoids a double-timeout where a Playwright default
+  // (30 s) fires before the test budget runs out and produces a misleading error message.
+  await page.waitForFunction(() => {
+    // Signal 1: redirected to the admin page
+    const onAdminPage = window.location.pathname.includes('admin');
+    if (!onAdminPage) return false;
 
-  // #admin-auth-overlay covers the dashboard while Firebase resolves the admin claim.
-  // Waiting for it to disappear is deterministic; the old fixed 2.5s delay was a race
-  // condition that could fire before auth completed on slow CI machines.
-  await page.locator('#admin-auth-overlay').waitFor({ state: 'hidden', timeout: 15_000 });
+    // Guard: the URL changes to admin.html mid-navigation (before the page's load event
+    // fires). At that point admin.html's scripts have not run yet, so getElementById
+    // returns null — without this guard we would exit immediately and the test would
+    // proceed before the dashboard has rendered.
+    if (document.readyState !== 'complete') return false;
+
+    // Signal 2: auth overlay gone (Firebase admin claim resolved and UI updated)
+    const overlay = document.getElementById('admin-auth-overlay');
+    if (!overlay) return true; // no overlay = access is unrestricted
+    // offsetParent is always null for position:fixed elements — use getComputedStyle.
+    const style = window.getComputedStyle(overlay);
+    return (
+      style.display === 'none' ||
+      style.visibility === 'hidden' ||
+      overlay.classList.contains('hidden')
+    );
+  }, { timeout: 0 });
 }

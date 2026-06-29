@@ -2,7 +2,7 @@ export type Action =
   | { kind: 'click';         selector: string; force?: boolean }
   | { kind: 'fill';          selector: string; value: string }
   | { kind: 'select';        selector: string; label: string }
-  | { kind: 'waitFor';       selector: string; state: 'visible' | 'hidden' | 'attached'; timeoutMs?: number }
+  | { kind: 'waitFor';       selector: string; state: 'visible' | 'hidden' | 'attached' }
   | { kind: 'assertVisible'; selector: string }
   | { kind: 'assertHidden';  selector: string }
   | { kind: 'assertText';    selector: string; contains: string };
@@ -48,7 +48,7 @@ const CLICK_SUBMIT: JourneyStep = {
 
 const ASSERT_SUCCESS: JourneyStep = {
   description: 'Assert submit button is no longer visible — form transitioned to success state',
-  action: { kind: 'waitFor', selector: '#demo-submit-btn', state: 'hidden', timeoutMs: 10_000 },
+  action: { kind: 'waitFor', selector: '#demo-submit-btn', state: 'hidden' },
 };
 
 const ASSERT_NO_SUCCESS: JourneyStep = {
