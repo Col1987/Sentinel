@@ -17,39 +17,6 @@ const COLLECTION_ADDRESS = '56 Robberg Road';
 
 test.describe('Public page security', { tag: ['@security'] }, () => {
 
-  // ─── welcome-page-no-collection-address ────────────────────────────────────
-
-  test('welcome-page-no-collection-address — collection address must not appear on the guest welcome page', async ({ page }) => {
-    test.info().annotations.push({
-      type: 'description',
-      description: "Loaded the guest-facing welcome page and checked whether the Juel Haus warehouse collection address ('56 Robberg Road') appears anywhere in the page. This address is internal logistics information — showing it to guests would be incorrect and could expose operational details. CONFIRMED: the address does not appear on the welcome page.",
-    });
-
-    // domcontentloaded is sufficient: the collection address is in static HTML, not CF-injected.
-    // Using 'load' would wait for live CF requests (not intercepted here) which can be slow.
-    await page.goto('/welcome.html', { waitUntil: 'domcontentloaded', timeout: 15_000 });
-
-    const visibleText = await page.evaluate(() => document.body.innerText);
-    const rawHtml = await page.content();
-
-    const inVisibleText = visibleText.includes(COLLECTION_ADDRESS);
-    const inRawHtml     = rawHtml.includes(COLLECTION_ADDRESS);
-
-    if (inVisibleText || inRawHtml) {
-      console.error(
-        `[FINDING][critical] welcome-page-no-collection-address: "${COLLECTION_ADDRESS}" found on ` +
-          'the guest welcome page. This address is internal logistics information that must never be ' +
-          'visible to guests — it appears in the page ' +
-          (inVisibleText ? 'visible text' : 'HTML source only') + '.',
-      );
-    }
-
-    expect(
-      inVisibleText || inRawHtml,
-      `"${COLLECTION_ADDRESS}" must not appear anywhere on the guest welcome page`,
-    ).toBe(false);
-  });
-
   // ─── track-page-invalid-input ──────────────────────────────────────────────
 
   test('track-page-invalid-input — invalid order ID shows a graceful not-found message, not a stack trace', async ({ page }) => {

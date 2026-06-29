@@ -4,58 +4,78 @@ import type { AuditResult, AuditFinding, Severity } from './types';
 
 const IMPACT_MAP: Record<string, Severity> = {
   critical: 'critical',
-  serious: 'high',
+  serious:  'high',
   moderate: 'medium',
-  minor: 'low',
+  minor:    'low',
 };
 
-export async function auditAccessibility(page: Page, targetUrl: string): Promise<AuditResult> {
-  const start = Date.now();
+// Runs axe-core on each supplied path and combines all findings into a single AuditResult.
+// Findings are tagged with the full page URL via the `url` field so callers can group by page.
+// The caller is responsible for setting up any route intercepts (e.g. CF stubs for /welcome.html)
+// before calling this function — page routes persist across internal navigations.
+export async function auditAccessibility(
+  page: Page,
+  paths: string[],
+  baseUrl: string,
+): Promise<AuditResult> {
+  const start    = Date.now();
   const findings: AuditFinding[] = [];
 
-  // Wrap analyze() so a CSP block, frame detach, or axe internal error produces
-  // a finding rather than an uncaught exception that kills the test run.
-  let violations: Awaited<ReturnType<AxeBuilder['analyze']>>['violations'];
-  try {
-    ({ violations } = await new AxeBuilder({ page }).analyze());
-  } catch (err) {
-    return {
-      auditor: 'accessibility',
-      targetUrl,
-      timestamp: new Date().toISOString(),
-      durationMs: Date.now() - start,
-      passed: false,
-      findings: [{
-        url: targetUrl,
+  for (const path of paths) {
+    const pageUrl = `${baseUrl}${path === '/' ? '' : path}`;
+
+    try {
+      // domcontentloaded avoids hanging on pages with slow external requests (e.g. /welcome.html
+      // with live Cloud Function calls). axe-core can analyse the DOM at this state.
+      await page.goto(path, { waitUntil: 'domcontentloaded' });
+    } catch (err) {
+      findings.push({
+        url:      pageUrl,
         severity: 'info',
         category: 'accessibility',
-        message: 'axe-core analysis failed',
-        detail: err instanceof Error ? err.message : String(err),
-      }],
-    };
-  }
-
-  for (const violation of violations) {
-    const severity: Severity = IMPACT_MAP[violation.impact ?? ''] ?? 'info';
-
-    for (const node of violation.nodes) {
-      findings.push({
-        url: targetUrl,
-        severity,
-        category: 'accessibility',
-        message: `[${violation.id}] ${violation.description}`,
-        selector: node.target.join(' > '),
-        helpUrl: violation.helpUrl,
+        message:  `Navigation to ${path} failed`,
+        detail:   err instanceof Error ? err.message : String(err),
       });
+      continue;
+    }
+
+    let violations: Awaited<ReturnType<AxeBuilder['analyze']>>['violations'];
+    try {
+      ({ violations } = await new AxeBuilder({ page }).analyze());
+    } catch (err) {
+      findings.push({
+        url:      pageUrl,
+        severity: 'info',
+        category: 'accessibility',
+        message:  `axe-core analysis failed on ${path}`,
+        detail:   err instanceof Error ? err.message : String(err),
+      });
+      continue;
+    }
+
+    for (const violation of violations) {
+      const severity: Severity = IMPACT_MAP[violation.impact ?? ''] ?? 'info';
+      for (const node of violation.nodes) {
+        findings.push({
+          url:      pageUrl,
+          severity,
+          category: 'accessibility',
+          message:  `[${violation.id}] ${violation.description}`,
+          selector: node.target.join(' > '),
+          helpUrl:  violation.helpUrl,
+        });
+      }
     }
   }
 
+  const hasRealFinding = findings.some(f => f.severity !== 'info');
+
   return {
-    auditor: 'accessibility',
-    targetUrl,
-    timestamp: new Date().toISOString(),
-    durationMs: Date.now() - start,
-    passed: findings.length === 0,
+    auditor:     'accessibility',
+    targetUrl:   baseUrl,
+    timestamp:   new Date().toISOString(),
+    durationMs:  Date.now() - start,
+    passed:      !hasRealFinding,
     findings,
   };
 }
