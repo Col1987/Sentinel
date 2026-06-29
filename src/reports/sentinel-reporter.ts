@@ -169,6 +169,41 @@ const RULE_GUIDANCE: Record<string, Guidance> = {
     why: 'Screen reader users navigate pages by cycling through links. A link with no text or aria-label is announced only as "link", making navigation impossible for users who depend on assistive technology.',
     fix: 'Ensure every anchor element contains visible text. For icon-only links, add an aria-label describing the destination — for example, aria-label="Visit our Instagram page".',
   },
+
+  // ── SEO rules ──────────────────────────────────────────────────────────────
+
+  'seo-title': {
+    why: 'The page title appears in browser tabs, bookmarks, and search engine results pages (SERPs). A missing or out-of-range title loses the single most influential on-page SEO signal and confuses users navigating multiple tabs.',
+    fix: 'Add a unique <title> element to every page\'s <head>. Keep it between 10 and 60 characters so it is not truncated in SERPs. Follow the pattern "Page Name — Brand Name".',
+  },
+  'seo-meta-description': {
+    why: 'Search engines display the meta description as the snippet below the page title in SERPs. A well-crafted description directly improves click-through rates. Missing or too-short descriptions cause Google to auto-generate a snippet, often producing unhelpful excerpts.',
+    fix: 'Add <meta name="description" content="..."> inside <head> on every page. Write between 50 and 160 characters that summarise the page\'s purpose and include a natural call-to-action.',
+  },
+  'seo-h1': {
+    why: 'The h1 heading is the primary semantic marker search engines use to understand what a page is about. Multiple h1 elements dilute topical authority; no h1 removes the signal entirely.',
+    fix: 'Place exactly one <h1> per page containing the primary keyword and topic of the page. All other section headings should be h2 or below.',
+  },
+  'seo-heading-order': {
+    why: 'A logical heading hierarchy (h1 → h2 → h3) reinforces the document outline that search engines use to understand content structure. Skipped levels also break screen reader navigation for users who jump between headings.',
+    fix: 'Ensure headings descend sequentially: h1 for the page title, h2 for major sections, h3 for subsections. Use CSS — not heading levels — to control visual size.',
+  },
+  'seo-open-graph': {
+    why: 'Open Graph meta tags control how the page appears when shared on social media platforms (Facebook, LinkedIn, WhatsApp preview). Missing tags result in unattractive link previews that reduce click-through when content is shared.',
+    fix: 'Add og:title, og:description, and og:image <meta> tags inside <head>. The image should be at least 1200 × 630 px for best display across platforms.',
+  },
+  'seo-canonical': {
+    why: 'A canonical URL tells search engines which version of a page is definitive. Without it, crawlers may index multiple URL variants (with/without trailing slash, query strings, www vs non-www), splitting link equity and causing duplicate-content penalties.',
+    fix: 'Add <link rel="canonical" href="https://www.example.com/page/"> inside <head> on every page, pointing to the preferred URL for that page.',
+  },
+  'seo-lang': {
+    why: 'The lang attribute on <html> lets search engines match content to the correct regional audience and helps browsers and assistive technologies apply the right language rules for spell-checking and pronunciation.',
+    fix: 'Add lang="en-ZA" (or the relevant BCP 47 tag) to the <html> element.',
+  },
+  'seo-img-alt': {
+    why: 'Search engines index image alt text as a content signal for image search and broader topic relevance. Images without alt attributes are invisible to search engines and inaccessible to users with visual impairments.',
+    fix: 'Add descriptive alt attributes to every meaningful image. Describe what the image communicates, not what it depicts — "Welcome pack with artisanal coffee and local guide" rather than "image.jpg".',
+  },
 };
 
 const DEFAULT_GUIDANCE: Guidance = {

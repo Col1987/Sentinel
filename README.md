@@ -33,15 +33,15 @@ sentinel/
 
 ## Current test coverage
 
-139 tests across 5 projects, running in under 2 minutes.
+146 tests across 5 projects, running in under 2 minutes.
 
 **Smoke (11 tests):** Homepage returns 200, no console errors, page title present. All 7 known pages respond without a server error (checked in parallel via HTTP, completes in under 500ms). Navigation bar visible with at least one link. Primary CTA button ("Get Started" or "Book a Demo") present. Footer rendered. CSS stylesheets loaded with non-default computed styling applied. Firebase SDK initialised. All homepage images load without broken-image errors. Page load time measured and flagged if over 5 s (medium) or 10 s (high).
 
-**Functional (57 tests):** Demo booking form (10 scenarios including validation, XSS, boundary inputs, double-submit), registration form (8 scenarios including password mismatch, phone validation, terms enforcement), login form (6 scenarios), forgot password (4 scenarios), navigation and anchor scrolling (5 tests), modal open/close and cross-modal navigation (9 tests), responsive/mobile (4 tests), storefront cart behaviour (6 tests), demo modal lifecycle (2 tests), auth flows including logout (3 tests), order tracking deeplinks (2 tests).
+**Functional (63 tests):** Demo booking form (10 scenarios including validation, XSS, boundary inputs, double-submit), registration form (8 scenarios including password mismatch, phone validation, terms enforcement), login form (6 scenarios), forgot password (4 scenarios), navigation and anchor scrolling (5 tests), modal open/close and cross-modal navigation (9 tests), responsive/mobile (7 tests across three viewport groups — 375px mobile, 768px tablet boundary, and explicit 375px/1280px horizontal overflow checks), storefront cart behaviour (9 tests including multi-item accumulation, cross-page persistence, and badge-to-drawer count consistency), demo modal lifecycle (2 tests), auth flows including logout (3 tests), order tracking deeplinks (2 tests).
 
 **Security (37 tests):** Auth bypass and direct page access (3 tests), cart manipulation and empty checkout (3 tests), console injection and DOM bypass (3 tests), credential exposure scanning for PayFast keys, TCG API keys, MD5 libraries, and deprecated project references (5 tests), CSP header validation (1 test), checkout abuse including XSS, empty submit, and price-in-DOM scanning (5 tests), welcome page XSS, collection address leak, QR data leak (5 tests), order tracking XSS, SQL injection, sensitive data scanning, cross-user access probing (6 tests), public page console error sweep across all known pages (1 test), security response headers (HSTS, X-Content-Type-Options, X-Frame-Options/CSP frame-ancestors, Referrer-Policy, Permissions-Policy) and cookie security flags (Secure, HttpOnly, SameSite) (2 tests).
 
-**Audit (3 tests):** Accessibility via axe-core (WCAG AA) across all 6 known public pages (homepage, account, checkout, order tracking, welcome, terms) with findings grouped by page, broken link verification with browser fallback, interactive element discovery with selector mapping.
+**Audit (4 tests):** Accessibility via axe-core (WCAG AA) across all 6 known public pages (homepage, account, checkout, order tracking, welcome, terms) with findings grouped by page, SEO audit across all 6 pages checking title length, meta description, h1 count, heading hierarchy, Open Graph tags, canonical URL, lang attribute, and image alt attributes, broken link verification with browser fallback, interactive element discovery with selector mapping.
 
 **Admin (32 tests):** Dashboard stats and tab navigation (2 tests), order management structure and detail view (2 tests), pack CRUD flows with create, edit, and delete confirmation (4 tests), user management list and detail (3 tests), order flows with filtering, search, and CSV export (5 tests), negative access control with DOM bypass, unauthenticated tab forcing, and session expiry (3 tests), negative order abuse with XSS, SQL injection, and unauthenticated export (4 tests), negative pack abuse with empty/negative/zero price and XSS (5 tests), negative user abuse with credential scanning and role escalation probing (2 tests), access control and auth gate verification (2 tests).
 
@@ -58,6 +58,15 @@ sentinel/
 - 16 landmark/region violations (content outside semantic landmarks).
 - Auth modal does not close on Escape key. Keyboard users cannot dismiss it.
 - Mobile hamburger menu z-index blocks its own close button.
+
+**SEO:**
+- Homepage title is 74 characters, exceeding the 60-character SERP display limit. Current value: "Juel Haus | Guest Experience Platform for Airbnb & Short-Term Rental Hosts".
+- Canonical URL (`<link rel="canonical">`) missing on all 6 pages. Without it, search engines may index multiple URL variants and split link equity.
+- No `<h1>` heading on account, checkout, or welcome pages. Search engines use the h1 as the primary topical signal for each page.
+- Meta description on account and checkout pages is 188 characters, exceeding the 160-character limit. Google will truncate or auto-generate a replacement snippet.
+- Open Graph tags (og:title, og:description, og:image) missing on account, tracking, welcome, and terms pages. Shared links on social platforms will render without a preview.
+- Heading hierarchy skips a level on the terms page (h1 → h3 with no h2). Breaks document outline for both search engines and screen reader navigation.
+- 17 findings across 6 pages. Homepage and terms each show 2 findings; account shows 4.
 
 **Functional:**
 - Cart total display does not reset after removing the last item. Badge shows 0 but price stays at R1,200.
@@ -177,7 +186,7 @@ Key design decisions:
 
 **Phase 1: Safe-mode framework and reporting (complete)**
 
-Built the full test engine, 139 tests across smoke, functional, security, audit, and admin projects. All tests run in safe mode with outbound requests intercepted. Unified HTML reporter generates client-ready reports with findings, severity metrics, and fix guidance. CI pipeline runs on push and daily cron. Site discovery auto-maps interactive elements. Reliability audit eliminated all flaky waits and independent timeouts.
+Built the full test engine, 146 tests across smoke, functional, security, audit, and admin projects. All tests run in safe mode with outbound requests intercepted. Unified HTML reporter generates client-ready reports with findings, severity metrics, and fix guidance. CI pipeline runs on push and daily cron. Site discovery auto-maps interactive elements. Reliability audit eliminated all flaky waits and independent timeouts.
 
 **Phase 2: Live-mode execution**
 

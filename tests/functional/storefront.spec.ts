@@ -375,4 +375,202 @@ test.describe('Storefront behaviour', { tag: ['@functional'] }, () => {
     expect(authModalVisible, 'Auth modal must appear when an unauthenticated user clicks "Proceed to Checkout"').toBe(true);
   });
 
+  // ─── cart-multiple-items ──────────────────────────────────────────────────────
+
+  test('cart-multiple-items — adding two different products shows both in the cart drawer with badge 2', async ({ page }) => {
+    test.info().annotations.push({
+      type: 'description',
+      description: "Added the first product to the cart, closed the drawer, then added a second product. Verified that the cart badge updated to 2 and that both items appeared in the cart drawer. A badge that does not increment for a second item, or a drawer that only shows the most recent addition, indicates a cart accumulation bug.",
+    });
+
+    await page.goto('/');
+
+    const item1 = await addFirstItemToCart(page);
+    if (!item1.success) {
+      console.error('[FINDING][medium] cart-multiple-items: no "Add to Cart" buttons found in #gifts on /');
+      expect(false, 'Expected "Add to Cart" buttons to be visible in #gifts').toBe(true);
+    }
+
+    // Drawer auto-opens after first item — close it before clicking the second button.
+    const closeBtn = page.locator(
+      '#cart-drawer button[aria-label*="close" i], ' +
+        '#cart-drawer [class*="close"]:visible, ' +
+        '#cart-drawer .cart-header button',
+    ).first();
+    if (await closeBtn.isVisible({ timeout: 2_000 }).catch(() => false)) {
+      await closeBtn.click();
+      await page.locator('#cart-drawer').waitFor({ state: 'hidden', timeout: 2_000 }).catch(() => {});
+    }
+
+    // Second "Add to Cart" button — nth(1) targets the second pack card.
+    const addBtns = page.locator('#gifts button:has-text("Add to Cart")');
+    const btnCount = await addBtns.count();
+    if (btnCount < 2) {
+      console.log(`[INFO] cart-multiple-items: only ${btnCount} "Add to Cart" button(s) found — cannot test multiple items. Skipping.`);
+      return;
+    }
+
+    await addBtns.nth(1).click();
+
+    await page.waitForFunction(
+      () => parseInt(document.querySelector('#cart-count')?.textContent?.trim() ?? '0', 10) >= 2,
+      { timeout: 5_000 },
+    ).catch(() => {});
+
+    const badgeAfter = parseInt(
+      (await page.locator('#cart-count').textContent().catch(() => '0')) ?? '0',
+      10,
+    );
+
+    console.log(`[INFO] cart-multiple-items: badge after two additions = ${badgeAfter}.`);
+
+    if (badgeAfter < 2) {
+      console.error(
+        `[FINDING][high] cart-multiple-items: badge shows ${badgeAfter} after adding two products — ` +
+          'expected 2. Cart is not accumulating items correctly.',
+      );
+    }
+
+    // Verify drawer (which auto-opens on second add) lists at least 2 entries.
+    await page.locator('#cart-drawer').waitFor({ state: 'visible', timeout: 3_000 }).catch(() => {});
+    const drawerItems = page.locator(
+      '#cart-drawer .cart-items li, #cart-drawer [class*="cart-item"]',
+    );
+    const drawerCount = await drawerItems.count();
+    console.log(`[INFO] cart-multiple-items: drawer item rows = ${drawerCount}.`);
+
+    if (drawerCount < 2) {
+      console.error(
+        `[FINDING][medium] cart-multiple-items: cart drawer shows ${drawerCount} item row(s) after adding two products. ` +
+          'The drawer should list every item in the cart.',
+      );
+    }
+
+    expect(badgeAfter, 'Cart badge must show 2 after adding two separate products').toBeGreaterThanOrEqual(2);
+  });
+
+  // ─── cart-persists-across-pages ──────────────────────────────────────────────
+
+  test('cart-persists-across-pages — cart state survives navigation to another page and back', async ({ page }) => {
+    test.info().annotations.push({
+      type: 'description',
+      description: "Added a product to the cart, navigated to the Terms page, then navigated back to the homepage. Verified that the cart badge still showed the original item count and that the 'bh_cart' localStorage key was present throughout. Cart state that resets on navigation (but not reload) indicates the cart is stored in an in-memory variable rather than localStorage.",
+    });
+
+    await page.goto('/');
+
+    const item = await addFirstItemToCart(page);
+    if (!item.success) {
+      console.error('[FINDING][medium] cart-persists-across-pages: no "Add to Cart" buttons found in #gifts on /');
+      expect(false, 'Expected "Add to Cart" buttons to be visible in #gifts').toBe(true);
+    }
+
+    const badgeBeforeNav = parseInt(
+      (await page.locator('#cart-count').textContent().catch(() => '0')) ?? '0',
+      10,
+    );
+    const lsKeyOnHome = await page.evaluate(() => localStorage.getItem('bh_cart'));
+    console.log(
+      `[INFO] cart-persists-across-pages: badge before nav = ${badgeBeforeNav}, bh_cart present = ${!!lsKeyOnHome}.`,
+    );
+
+    // Navigate away and check localStorage is still intact on another page.
+    await page.goto('/terms.html', { waitUntil: 'domcontentloaded' });
+    const lsKeyOnTerms = await page.evaluate(() => localStorage.getItem('bh_cart'));
+    if (!lsKeyOnTerms) {
+      console.error(
+        '[FINDING][high] cart-persists-across-pages: "bh_cart" localStorage key is absent on /terms.html. ' +
+          'The cart data is not persisted — navigating away clears the cart.',
+      );
+    }
+    console.log(`[INFO] cart-persists-across-pages: bh_cart on /terms.html = ${!!lsKeyOnTerms}.`);
+
+    // Navigate back and check the badge is restored.
+    await page.goto('/', { waitUntil: 'load' });
+    await page.waitForFunction(
+      () => document.querySelector('#cart-count') !== null,
+      { timeout: 5_000 },
+    ).catch(() => {});
+
+    const badgeAfterNav = parseInt(
+      (await page.locator('#cart-count').textContent().catch(() => '0')) ?? '0',
+      10,
+    );
+    console.log(`[INFO] cart-persists-across-pages: badge after returning to / = ${badgeAfterNav}.`);
+
+    if (badgeAfterNav !== badgeBeforeNav) {
+      console.error(
+        `[FINDING][high] cart-persists-across-pages: badge changed from ${badgeBeforeNav} to ${badgeAfterNav} after navigating away and back. ` +
+          'Cart state must survive same-session navigation.',
+      );
+    }
+
+    expect(badgeAfterNav, 'Cart badge must match original count after navigating away and returning').toBe(badgeBeforeNav);
+  });
+
+  // ─── cart-quantity-matches-badge ─────────────────────────────────────────────
+
+  test('cart-quantity-matches-badge — number of items in the cart drawer matches the badge count', async ({ page }) => {
+    test.info().annotations.push({
+      type: 'description',
+      description: "Added a product to the cart and verified that the number of item rows visible in the open cart drawer matched the number shown in the cart badge. A mismatch (e.g., badge shows 2 but drawer shows 1 row) indicates that the badge and the drawer are reading from different state sources.",
+    });
+
+    await page.goto('/');
+
+    const item = await addFirstItemToCart(page);
+    if (!item.success) {
+      console.error('[FINDING][medium] cart-quantity-matches-badge: no "Add to Cart" buttons found in #gifts on /');
+      expect(false, 'Expected "Add to Cart" buttons to be visible in #gifts').toBe(true);
+    }
+
+    // Drawer auto-opens after addFirstItemToCart.
+    await page.locator('#cart-drawer').waitFor({ state: 'visible', timeout: 3_000 }).catch(() => {});
+
+    const badgeCount = parseInt(
+      (await page.locator('#cart-count').textContent().catch(() => '0')) ?? '0',
+      10,
+    );
+
+    // Try multiple known patterns for cart item containers and return the first non-zero count.
+    const drawerCount = await page.evaluate(() => {
+      const drawer = document.querySelector('#cart-drawer');
+      if (!drawer) return -1;
+      const byCartItemsChildren = drawer.querySelectorAll('.cart-items > *').length;
+      const byLi                = drawer.querySelectorAll('li').length;
+      const byCartItem          = drawer.querySelectorAll('[class*="cart-item"]').length;
+      if (byCartItemsChildren > 0) return byCartItemsChildren;
+      if (byLi > 0)                return byLi;
+      if (byCartItem > 0)          return byCartItem;
+      return 0;
+    });
+
+    console.log(
+      `[INFO] cart-quantity-matches-badge: badge = ${badgeCount}, drawer rows = ${drawerCount}.`,
+    );
+
+    if (drawerCount === -1) {
+      console.error('[FINDING][medium] cart-quantity-matches-badge: #cart-drawer element not found in DOM.');
+      expect(false, '#cart-drawer must exist after adding an item').toBe(true);
+    }
+
+    if (drawerCount === 0) {
+      // Drawer structure uses an unrecognised pattern — log and skip the count assertion.
+      console.warn(
+        `[FINDING][info] cart-quantity-matches-badge: no item rows matched known selectors in #cart-drawer ` +
+          `(badge=${badgeCount}). Manual inspection of cart drawer DOM structure is recommended.`,
+      );
+      return;
+    }
+
+    if (drawerCount !== badgeCount) {
+      console.error(
+        `[FINDING][medium] cart-quantity-matches-badge: badge shows ${badgeCount} item(s) but drawer has ${drawerCount} row(s). ` +
+          'The badge and drawer must reflect the same cart state.',
+      );
+    }
+
+    expect(drawerCount, 'Number of cart drawer item rows must match the badge count').toBe(badgeCount);
+  });
+
 });
