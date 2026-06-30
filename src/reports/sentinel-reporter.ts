@@ -204,6 +204,61 @@ const RULE_GUIDANCE: Record<string, Guidance> = {
     why: 'Search engines index image alt text as a content signal for image search and broader topic relevance. Images without alt attributes are invisible to search engines and inaccessible to users with visual impairments.',
     fix: 'Add descriptive alt attributes to every meaningful image. Describe what the image communicates, not what it depicts — "Welcome pack with artisanal coffee and local guide" rather than "image.jpg".',
   },
+
+  // ── Code-quality rules ─────────────────────────────────────────────────────
+
+  'code-quality-duplicate-id': {
+    why: 'Duplicate element IDs are a common pattern in AI-generated code where the same component or section is repeated without unique identifiers. The HTML spec requires IDs to be unique within a document. Duplicate IDs cause unpredictable behaviour in CSS selectors, JavaScript lookups (document.getElementById returns only the first match), and ARIA label associations. Analytics scripts and tracking tools also rely on IDs to identify elements.',
+    fix: 'Assign a unique id to every element that has one. For repeated components (card grids, list items), use data-* attributes or class names instead of IDs, or generate unique suffixes (e.g., item-1, item-2). A linter rule (eslint-plugin-jsx-a11y or html-validate) can enforce uniqueness automatically.',
+  },
+  'code-quality-orphaned-handler': {
+    why: 'AI-generated code frequently references event handler functions (onclick="handleClick()") that were never defined, or were defined in a separate script file that was removed or renamed. An orphaned handler silently fails: the click fires, the function lookup returns undefined, and the JavaScript engine throws a ReferenceError. Users see no feedback; the action does nothing. This is distinct from a console error — it is a broken user interaction.',
+    fix: 'Ensure every function name referenced in an inline event handler exists in the global scope at the time the element is rendered. Move handler definitions into a <script> block that loads before the element, or replace inline handlers with addEventListener calls added after DOMContentLoaded. Verify with a browser console search: type the function name and confirm it is not undefined.',
+  },
+  'code-quality-dead-form': {
+    why: 'AI-generated forms often include the visual structure of a form (inputs, labels, submit button) without the submission mechanism. A <form> element with no action attribute, no onsubmit handler, and no onclick hook on its children will collect user input but never send or process it. Visitors experience a broken flow: they fill out the form, click submit, and nothing happens.',
+    fix: 'Every form must have at least one submission path: (1) an action attribute pointing to a server endpoint for traditional HTML form posts, (2) an onsubmit handler that processes data and prevents default, or (3) a JavaScript event listener on the submit event added via addEventListener. Verify that the submission path actually executes by checking the Network tab after a test submission.',
+  },
+  'code-quality-phantom-asset': {
+    why: 'AI code generators frequently reference CSS files, JavaScript libraries, fonts, or images by filename without verifying they exist on the server. A referenced asset that returns 404 is silently dropped by the browser: styles are not applied, scripts do not run, and fonts fall back to system defaults. In production, phantom assets cause layout failures and broken functionality that only appear after deployment — they are invisible in local development if the file exists locally but was never uploaded.',
+    fix: 'Confirm every asset referenced by a <link href>, <script src>, or <link rel="preload"> exists at that URL and returns HTTP 200. Check the Network tab in browser DevTools with "4xx" or "Failed" filters applied. Remove or correct any reference that returns 404. If the asset is intentionally lazy-loaded, ensure the URL is generated at runtime rather than hardcoded in HTML.',
+  },
+  'code-quality-low-quality-aria': {
+    why: 'AI tools generate aria-label attributes to satisfy accessibility linters, but frequently produce labels that are technically present but semantically worthless: single characters, the element\'s own tag name, or generic phrases like "click here" or "button". A screen reader user navigating by landmark or control type hears these labels verbatim — "button, button" or "link, click here" — which conveys no more information than having no label at all, and in some cases introduces more confusion.',
+    fix: 'Replace generic or redundant aria-labels with a concise description of the element\'s specific purpose or destination: "Close booking dialog" rather than "×", "View order #1234" rather than "link". Labels should describe what happens when the element is activated, not what the element is. At minimum, the label must be distinct from every other label on the page and longer than 2 characters.',
+  },
+  'code-quality-duplicate-meta': {
+    why: 'AI tools that generate or merge component output sometimes produce multiple <title> or <meta name="description"> elements in the same document. Browsers use only the first value and ignore subsequent duplicates, but search engines may penalise duplicate signals or apply unpredictable precedence rules. Multiple <meta name="viewport"> tags cause inconsistent rendering across mobile browsers because each tag may override the previous one with different scale or width settings.',
+    fix: 'Search the document <head> for duplicate title or meta tags and remove all but one. This often appears in templates where a base layout and a child template both emit the same tag. Use server-side template inheritance or slot mechanisms to ensure exactly one instance of each head element is rendered. Validate with a search engine preview tool (e.g., Google Search Console) to confirm the intended value is being indexed.',
+  },
+  'code-quality-hardcoded-localhost': {
+    why: 'AI code generators frequently leave development-environment URLs (localhost, 127.0.0.1) in production code. These references appear when the tool generates code against a local dev server and the developer deploys without replacing them. In production, API calls to localhost silently fail, forms submit nowhere, and scripts refuse to load — causing broken functionality that only manifests after deployment and is difficult to trace.',
+    fix: 'Replace all hardcoded localhost URLs with environment variables, configuration files, or relative paths. Use a build-time substitution mechanism (Vite\'s import.meta.env, webpack DefinePlugin, or dotenv) so the same codebase works in development and production without manual find-and-replace. Search for "localhost" and "127.0.0.1" across all HTML, JS, and CSS files before every deployment.',
+  },
+  'code-quality-empty-href': {
+    why: 'AI tools generate `<a href="#">` or `<a href="javascript:void(0)">` as placeholder links when they need an anchor element but have not yet determined its destination. These links appear clickable but do nothing useful: clicking "#" scrolls the page to the top, while "javascript:void(0)" does nothing at all. Screen reader users hear the link text announced as a navigable destination that leads nowhere, and search engines waste crawl budget following them.',
+    fix: 'Replace placeholder hrefs with real destinations, or convert elements that trigger JavaScript actions into <button> elements (which are the semantically correct element for in-page actions). If the link destination is not yet known, remove the element entirely rather than leaving a non-functional placeholder in production.',
+  },
+  'code-quality-console-log': {
+    why: 'AI tools insert console.log statements throughout generated code to aid development debugging. More than 5 console.log calls in inline scripts strongly suggests debug output was not cleaned up before deployment. This leaks internal application state, data structures, API responses, and user information to anyone who opens the browser console — including security-relevant data that should never be visible in production.',
+    fix: 'Remove console.log calls from all code that runs in production. Use a build step (terser with drop_console, babel-plugin-transform-remove-console, or eslint no-console rule) to strip them automatically. If logging is needed in production, use a structured logging library with configurable log levels that can be silenced in production environments.',
+  },
+  'code-quality-mixed-content': {
+    why: 'Mixed content occurs when an HTTPS page loads resources (scripts, stylesheets, images, fonts) over HTTP. Modern browsers block active mixed content (scripts, stylesheets) outright and show security warnings for passive mixed content (images). A blocked script or stylesheet may cause the entire page to render incorrectly or JavaScript functionality to fail silently. This is a common AI-generated code pattern when the tool copies asset URLs from examples that predate widespread HTTPS adoption.',
+    fix: 'Replace all http:// asset URLs with https:// equivalents. For external resources (CDNs, fonts, APIs), verify the provider offers HTTPS — virtually all major providers do. For self-hosted resources, ensure your server is configured for HTTPS. Use protocol-relative URLs (//cdn.example.com/file.js) only as a last resort, as they depend on the page protocol.',
+  },
+  'code-quality-hardcoded-test-data': {
+    why: 'AI tools use placeholder content (Lorem ipsum, test@test.com, John Doe, TODO, FIXME) when generating UI components before real content is available. This placeholder text is often never replaced and ships to production, appearing in visible page text, email notifications, invoice templates, and client-facing documents. Placeholder emails (test@test.com) in forms route real submissions to non-existent addresses. TODO and FIXME annotations in visible text indicate incomplete features shipped prematurely.',
+    fix: 'Search page body text for each flagged placeholder and replace with real content or remove the element if the content is not yet available. Establish a pre-deployment checklist that includes a text search for common placeholder strings. For TODO and FIXME items, resolve the underlying task or remove the annotation from user-visible text — these belong in code comments, not in rendered output.',
+  },
+};
+
+const AUDITOR_DESCRIPTIONS: Record<string, string> = {
+  'discovery':     'Maps every interactive element on the site and checks for missing accessible labels on form controls.',
+  'broken-links':  'Checks every link on the homepage to verify it leads to a working page. Uses browser fallback for JavaScript-rendered pages.',
+  'seo':           'Checks page titles, meta descriptions, heading hierarchy, Open Graph tags, canonical URLs, lang attributes, and image alt text across all pages.',
+  'accessibility': 'Runs axe-core WCAG 2 AA compliance checks across all public pages, testing colour contrast, landmarks, labels, and semantic structure.',
+  'code-quality':  'Detects common patterns in AI-generated code: duplicate element IDs, event handler attributes referencing undefined functions, and form elements with no submission mechanism.',
 };
 
 const DEFAULT_GUIDANCE: Guidance = {
@@ -509,9 +564,17 @@ function renderAuditSection(auditResults: AuditResult[]): string {
         ? 'card-warn'
         : 'card-fail';
 
+    const desc = AUDITOR_DESCRIPTIONS[result.auditor];
+    const nameBlock = desc
+      ? `<div class="auditor-name-block">
+          <h3 class="auditor-name">${escapeHtml(result.auditor)}</h3>
+          <p class="auditor-desc">${escapeHtml(desc)}</p>
+        </div>`
+      : `<h3 class="auditor-name">${escapeHtml(result.auditor)}</h3>`;
+
     return `<div class="auditor-card ${cardClass}">
       <div class="auditor-header">
-        <h3 class="auditor-name">${escapeHtml(result.auditor)}</h3>
+        ${nameBlock}
         ${statusBadge}
         <span class="auditor-meta">${formatDuration(result.durationMs)} &nbsp;·&nbsp; ${escapeHtml(result.targetUrl)}</span>
       </div>
@@ -528,25 +591,59 @@ function renderAuditSection(auditResults: AuditResult[]): string {
 function renderSecuritySection(findings: FindingRecord[]): string {
   if (findings.length === 0) return '';
 
-  const sorted = [...findings].sort(
-    (a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity),
-  );
+  // Group by test title, preserving insertion order within each group.
+  const byTest = new Map<string, FindingRecord[]>();
+  for (const f of findings) {
+    const bucket = byTest.get(f.testTitle);
+    if (bucket) bucket.push(f);
+    else byTest.set(f.testTitle, [f]);
+  }
 
-  const items = sorted.map(f => {
-    const colour = SEV_COLOUR[f.severity];
-    const bg = SEV_BG[f.severity];
-    return `<div class="security-finding" style="border-left-color:${colour};background:${bg}">
-      <div class="finding-header">
-        <span class="sev-badge" style="background:${colour}">${f.severity}</span>
+  // Sort groups highest-severity-first (use the best severity in the group).
+  const sortedGroups = [...byTest.entries()].sort(([, a], [, b]) => {
+    const aTop = Math.min(...a.map(f => SEVERITY_ORDER.indexOf(f.severity)));
+    const bTop = Math.min(...b.map(f => SEVERITY_ORDER.indexOf(f.severity)));
+    return aTop - bTop;
+  });
+
+  const groups = sortedGroups.map(([testTitle, groupFindings]) => {
+    const sorted = [...groupFindings].sort(
+      (a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity),
+    );
+    const highestSev = sorted[0].severity;
+    const colour = SEV_COLOUR[highestSev];
+    const bg     = SEV_BG[highestSev];
+    const count  = sorted.length;
+
+    // Readable title: strip the narrative description after " — ", then humanise.
+    const testId      = testTitle.split(' — ')[0].trim();
+    const readableTitle = testId.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
+    const rows = sorted.map(f => {
+      const c = SEV_COLOUR[f.severity];
+      return `<div class="security-group-row">
+        <span class="sev-badge" style="background:${c}">${f.severity}</span>
         <span class="finding-msg">${escapeHtml(f.message)}</span>
-      </div>
-      <div class="finding-source">${escapeHtml(f.project)} &middot; ${escapeHtml(f.testTitle)}</div>
+      </div>`;
+    }).join('');
+
+    return `<div class="rule-group">
+      <details>
+        <summary class="rule-summary" style="border-left-color:${colour};background:${bg}">
+          <div class="summary-left">
+            <span class="sev-badge" style="background:${colour}">${highestSev}</span>
+            <span class="rule-title">${escapeHtml(readableTitle)}</span>
+          </div>
+          <span class="summary-count">${count} finding${count === 1 ? '' : 's'} &#8250;</span>
+        </summary>
+        <div class="security-group-body">${rows}</div>
+      </details>
     </div>`;
   }).join('');
 
   return `<section class="report-section">
     <h2 class="section-heading">Security Findings</h2>
-    <div class="security-findings">${items}</div>
+    <div class="findings">${groups}</div>
   </section>`;
 }
 
@@ -651,16 +748,18 @@ body {
 /* ── Audit cards ── */
 .auditor-card { border: 1px solid #e2e8f0; border-radius: 10px; margin-bottom: 0.75rem; overflow: hidden; }
 .auditor-card:last-child { margin-bottom: 0; }
-.auditor-header { display: flex; align-items: center; gap: 0.75rem; padding: 1rem 1.5rem; border-bottom: 1px solid #f1f5f9; }
+.auditor-header { display: flex; align-items: flex-start; gap: 0.75rem; padding: 1rem 1.5rem; border-bottom: 1px solid #f1f5f9; }
 .card-pass .auditor-header { border-left: 4px solid #16a34a; }
 .card-fail .auditor-header { border-left: 4px solid #dc2626; }
 .card-warn .auditor-header { border-left: 4px solid #d97706; }
+.auditor-name-block { display: flex; flex-direction: column; gap: 0.2rem; }
 .auditor-name { font-size: 0.875rem; font-weight: 700; text-transform: capitalize; color: #0f172a; }
-.status-badge { font-size: 0.6rem; font-weight: 700; padding: 0.25em 0.65em; border-radius: 9999px; text-transform: uppercase; letter-spacing: 0.06em; }
+.auditor-desc { font-size: 0.75rem; color: #64748b; line-height: 1.5; max-width: 52ch; }
+.status-badge { font-size: 0.6rem; font-weight: 700; padding: 0.25em 0.65em; border-radius: 9999px; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 0.1rem; }
 .status-pass { background: #dcfce7; color: #15803d; }
 .status-fail { background: #fee2e2; color: #b91c1c; }
 .status-warn { background: #fef3c7; color: #92400e; }
-.auditor-meta { margin-left: auto; font-size: 0.75rem; color: #94a3b8; }
+.auditor-meta { margin-left: auto; font-size: 0.75rem; color: #94a3b8; white-space: nowrap; }
 .passed-body { display: flex; align-items: center; gap: 0.625rem; padding: 1.25rem 1.5rem; color: #15803d; font-size: 0.875rem; font-weight: 500; }
 .pass-icon { width: 20px; height: 20px; flex-shrink: 0; }
 .findings { padding: 1rem 1.25rem 1.25rem; display: flex; flex-direction: column; gap: 0.5rem; }
@@ -738,12 +837,10 @@ details.test-list-details > summary::-webkit-details-marker { display: none; }
   display: block;
 }
 
-/* ── Security findings ── */
-.security-findings { display: flex; flex-direction: column; gap: 0.625rem; }
-.security-finding { border-left: 4px solid transparent; border-radius: 8px; padding: 0.875rem 1rem; }
-.finding-header { display: flex; align-items: flex-start; gap: 0.625rem; margin-bottom: 0.375rem; }
+/* ── Security findings (grouped) ── */
+.security-group-body { padding: 0.5rem 1rem 0.625rem; border-top: 1px solid #f1f5f9; display: flex; flex-direction: column; gap: 0.375rem; }
+.security-group-row { display: flex; align-items: flex-start; gap: 0.625rem; padding: 0.25rem 0; }
 .finding-msg { font-size: 0.845rem; font-weight: 500; color: #1e293b; line-height: 1.5; }
-.finding-source { font-size: 0.72rem; color: #64748b; padding-left: calc(0.6em * 2 + 0.6em + 0.625rem); }
 
 /* ── Footer ── */
 .report-footer { text-align: center; padding: 2rem 0 1rem; font-size: 0.75rem; color: #94a3b8; letter-spacing: 0.02em; }

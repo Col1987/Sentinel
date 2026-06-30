@@ -33,7 +33,7 @@ sentinel/
 
 ## Current test coverage
 
-146 tests across 5 projects, running in under 2 minutes.
+147 tests across 5 projects, running in under 2 minutes.
 
 **Smoke (11 tests):** Homepage returns 200, no console errors, page title present. All 7 known pages respond without a server error (checked in parallel via HTTP, completes in under 500ms). Navigation bar visible with at least one link. Primary CTA button ("Get Started" or "Book a Demo") present. Footer rendered. CSS stylesheets loaded with non-default computed styling applied. Firebase SDK initialised. All homepage images load without broken-image errors. Page load time measured and flagged if over 5 s (medium) or 10 s (high).
 
@@ -41,7 +41,7 @@ sentinel/
 
 **Security (37 tests):** Auth bypass and direct page access (3 tests), cart manipulation and empty checkout (3 tests), console injection and DOM bypass (3 tests), credential exposure scanning for PayFast keys, TCG API keys, MD5 libraries, and deprecated project references (5 tests), CSP header validation (1 test), checkout abuse including XSS, empty submit, and price-in-DOM scanning (5 tests), welcome page XSS, collection address leak, QR data leak (5 tests), order tracking XSS, SQL injection, sensitive data scanning, cross-user access probing (6 tests), public page console error sweep across all known pages (1 test), security response headers (HSTS, X-Content-Type-Options, X-Frame-Options/CSP frame-ancestors, Referrer-Policy, Permissions-Policy) and cookie security flags (Secure, HttpOnly, SameSite) (2 tests).
 
-**Audit (4 tests):** Accessibility via axe-core (WCAG AA) across all 6 known public pages (homepage, account, checkout, order tracking, welcome, terms) with findings grouped by page, SEO audit across all 6 pages checking title length, meta description, h1 count, heading hierarchy, Open Graph tags, canonical URL, lang attribute, and image alt attributes, broken link verification with browser fallback, interactive element discovery with selector mapping.
+**Audit (5 tests):** Accessibility via axe-core (WCAG AA) across all 6 known public pages (homepage, account, checkout, order tracking, welcome, terms) with findings grouped by page, SEO audit across all 6 pages checking title length, meta description, h1 count, heading hierarchy, Open Graph tags, canonical URL, lang attribute, and image alt attributes, code quality audit (AI patterns) across all 6 pages with 11 checks targeting AI-generated code failures: duplicate IDs, orphaned event handlers, dead forms, phantom assets, low-quality aria, duplicate meta tags, hardcoded localhost, empty href links, console.log in production, mixed content, and hardcoded test data, broken link verification with browser fallback, interactive element discovery with selector mapping.
 
 **Admin (32 tests):** Dashboard stats and tab navigation (2 tests), order management structure and detail view (2 tests), pack CRUD flows with create, edit, and delete confirmation (4 tests), user management list and detail (3 tests), order flows with filtering, search, and CSV export (5 tests), negative access control with DOM bypass, unauthenticated tab forcing, and session expiry (3 tests), negative order abuse with XSS, SQL injection, and unauthenticated export (4 tests), negative pack abuse with empty/negative/zero price and XSS (5 tests), negative user abuse with credential scanning and role escalation probing (2 tests), access control and auth gate verification (2 tests).
 
@@ -68,6 +68,12 @@ sentinel/
 - Heading hierarchy skips a level on the terms page (h1 → h3 with no h2). Breaks document outline for both search engines and screen reader navigation.
 - 17 findings across 6 pages. Homepage and terms each show 2 findings; account shows 4.
 
+**Code Quality:**
+- `account.html` — `onclick="resendVerificationEmail()"` on `#resend-verify-btn` references a function that does not exist on `window`. Clicking the button silently fails with a ReferenceError. Consistent with AI-generated code where a handler is declared in an attribute but never implemented.
+- Homepage `form#demo-form` has no `action` attribute and no `onsubmit` handler. The form relies on a dynamically attached `addEventListener` that the static DOM cannot confirm. The submission path is invisible to static analysis.
+- Homepage — `<a href="#">` with visible text "log in again" is a placeholder link: clicking it scrolls to the top of the page rather than opening the login modal. Users who are signed out and click the prompt receive no feedback.
+- No localhost URLs, mixed content, Lorem ipsum, duplicate meta tags, or excessive console.log detected across any of the 6 audited pages.
+
 **Functional:**
 - Cart total display does not reset after removing the last item. Badge shows 0 but price stays at R1,200.
 - No confirmation prompt before pack deletion in admin portal.
@@ -93,6 +99,7 @@ Each auditor module in `src/auditors/` implements the `AuditResult` interface fr
 - **Links auditor:** Collects every `<a href>` on the page, checks each with an HTTP HEAD request, and falls back to full browser navigation for pages that require JavaScript to render. Eliminates false positives from client-rendered pages.
 - **Accessibility auditor:** Runs axe-core via `@axe-core/playwright` against configured pages. Maps axe impact levels to the Sentinel severity enum.
 - **Discovery auditor:** Navigates to each configured page and maps every interactive element (forms, inputs, buttons, links, selects, textareas). Extracts the most reliable selector for each element and outputs a JSON map to `reports/discovery.json`. Also flags elements with no accessible name.
+- **Code quality auditor:** Targets eleven failure patterns that appear disproportionately in AI-generated code. Checks run inside `page.evaluate()` without a full AST parse: duplicate element IDs (browser CSS and JS lookups silently return only the first), orphaned event handler attributes referencing functions that do not exist on `window` (silent broken interactions), forms with no detectable submission path, asset references that return HTTP 4xx (CSS or JS files referenced but never deployed), aria-label values that are too short or use generic placeholder text, duplicate `<title>` or `<meta>` tags, hardcoded localhost or 127.0.0.1 URLs, placeholder `<a href="#">` links, more than five `console.log` calls in inline scripts, HTTP resources loaded on an HTTPS page, and placeholder text in visible page content (Lorem ipsum, test@test.com, TODO, FIXME). The auditor targets AI tools specifically because they generate structurally valid HTML that passes visual inspection but contains these systematic gaps.
 
 ### Journey runner
 
@@ -186,7 +193,7 @@ Key design decisions:
 
 **Phase 1: Safe-mode framework and reporting (complete)**
 
-Built the full test engine, 146 tests across smoke, functional, security, audit, and admin projects. All tests run in safe mode with outbound requests intercepted. Unified HTML reporter generates client-ready reports with findings, severity metrics, and fix guidance. CI pipeline runs on push and daily cron. Site discovery auto-maps interactive elements. Reliability audit eliminated all flaky waits and independent timeouts.
+Built the full test engine, 147 tests across smoke, functional, security, audit, and admin projects. All tests run in safe mode with outbound requests intercepted. Unified HTML reporter generates client-ready reports with findings, severity metrics, and fix guidance. CI pipeline runs on push and daily cron. Site discovery auto-maps interactive elements. Reliability audit eliminated all flaky waits and independent timeouts.
 
 **Phase 2: Live-mode execution**
 

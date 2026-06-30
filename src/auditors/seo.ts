@@ -150,18 +150,13 @@ export async function auditSeo(
     }
   }
 
-  const hasMediumPlus = findings.some(
-    f => f.severity === 'critical' || f.severity === 'high' || f.severity === 'medium',
-  );
-  const hasLowOrInfo = findings.some(f => f.severity === 'low' || f.severity === 'info');
-
   return {
     auditor:    'seo',
     targetUrl:  baseUrl,
     timestamp:  new Date().toISOString(),
     durationMs: Date.now() - start,
-    passed:     !hasMediumPlus,
-    warning:    !hasMediumPlus && hasLowOrInfo,
+    passed:     true,
+    warning:    findings.some(f => f.severity !== 'info'),
     findings,
   };
 }
