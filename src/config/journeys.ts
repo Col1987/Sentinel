@@ -1,3 +1,5 @@
+import { testEmail } from './sites';
+
 export type Action =
   | { kind: 'click';         selector: string; force?: boolean }
   | { kind: 'fill';          selector: string; value: string }
@@ -81,7 +83,7 @@ const OPEN_REGISTER_MODAL: JourneyStep[] = [
 const FILL_REG_VALID: JourneyStep[] = [
   { description: 'Fill first name', action: { kind: 'fill', selector: '#reg-firstname', value: 'Sentinel' } },
   { description: 'Fill last name',  action: { kind: 'fill', selector: '#reg-lastname',  value: 'Test' } },
-  { description: 'Fill email',      action: { kind: 'fill', selector: '#reg-email',     value: 'sentinel-test@sentinel.dev' } },
+  { description: 'Fill email',      action: { kind: 'fill', selector: '#reg-email',     value: testEmail('reg01') } },
   { description: 'Fill mobile number', action: { kind: 'fill', selector: '#reg-mobile-num', value: '821234567' } },
   { description: 'Fill password',         action: { kind: 'fill', selector: '#reg-password',         value: 'Test@12345!' } },
   { description: 'Fill confirm password', action: { kind: 'fill', selector: '#reg-confirm-password', value: 'Test@12345!' } },
@@ -159,7 +161,7 @@ export const journeys: Journey[] = [
     steps: [
       ...OPEN_MODAL,
       { description: 'Fill name field', action: { kind: 'fill', selector: '#demo-name', value: 'Sentinel Test' } },
-      { description: 'Fill email field', action: { kind: 'fill', selector: '#demo-email', value: 'test@sentinel.dev' } },
+      { description: 'Fill email field', action: { kind: 'fill', selector: '#demo-email', value: testEmail('demo01') } },
       ...SELECT_PROPERTY,
       CLICK_SUBMIT,
       ASSERT_SUCCESS,
@@ -194,7 +196,7 @@ export const journeys: Journey[] = [
     clientDescription: "Left the name field empty in the demo booking form and clicked Submit. CONFIRMED: the form blocked submission — a name is required before the form can be sent.",
     steps: [
       ...OPEN_MODAL,
-      { description: 'Fill email, leave name empty', action: { kind: 'fill', selector: '#demo-email', value: 'test@sentinel.dev' } },
+      { description: 'Fill email, leave name empty', action: { kind: 'fill', selector: '#demo-email', value: testEmail('demo01') } },
       ...SELECT_PROPERTY,
       CLICK_SUBMIT,
       ASSERT_NO_SUCCESS,
@@ -219,7 +221,7 @@ export const journeys: Journey[] = [
     steps: [
       ...OPEN_MODAL,
       { description: 'Fill name with 2000 characters', action: { kind: 'fill', selector: '#demo-name', value: 'A'.repeat(2000) } },
-      { description: 'Fill email field', action: { kind: 'fill', selector: '#demo-email', value: 'test@sentinel.dev' } },
+      { description: 'Fill email field', action: { kind: 'fill', selector: '#demo-email', value: testEmail('demo01') } },
       ...SELECT_PROPERTY,
       CLICK_SUBMIT,
       ASSERT_SUCCESS,
@@ -232,7 +234,7 @@ export const journeys: Journey[] = [
     steps: [
       ...OPEN_MODAL,
       { description: 'Fill name with XSS payload', action: { kind: 'fill', selector: '#demo-name', value: "O'Brien-Smith <script>alert(1)</script>" } },
-      { description: 'Fill email field', action: { kind: 'fill', selector: '#demo-email', value: 'test@sentinel.dev' } },
+      { description: 'Fill email field', action: { kind: 'fill', selector: '#demo-email', value: testEmail('demo01') } },
       ...SELECT_PROPERTY,
       CLICK_SUBMIT,
       ASSERT_SUCCESS,
@@ -245,7 +247,7 @@ export const journeys: Journey[] = [
     steps: [
       ...OPEN_MODAL,
       { description: 'Fill name field', action: { kind: 'fill', selector: '#demo-name', value: 'Sentinel Test' } },
-      { description: 'Fill email field', action: { kind: 'fill', selector: '#demo-email', value: 'test@sentinel.dev' } },
+      { description: 'Fill email field', action: { kind: 'fill', selector: '#demo-email', value: testEmail('demo01') } },
       ...SELECT_PROPERTY,
       CLICK_SUBMIT,
       // Force bypasses Playwright's disabled-element check so the click event reaches the DOM
@@ -276,7 +278,7 @@ export const journeys: Journey[] = [
       ...OPEN_REGISTER_MODAL,
       { description: 'Fill first name', action: { kind: 'fill', selector: '#reg-firstname', value: 'Sentinel' } },
       { description: 'Fill last name',  action: { kind: 'fill', selector: '#reg-lastname',  value: 'Test' } },
-      { description: 'Fill email',      action: { kind: 'fill', selector: '#reg-email',     value: 'sentinel-test@sentinel.dev' } },
+      { description: 'Fill email',      action: { kind: 'fill', selector: '#reg-email',     value: testEmail('reg01') } },
       { description: 'Fill mobile number', action: { kind: 'fill', selector: '#reg-mobile-num', value: '821234567' } },
       { description: 'Fill password',                           action: { kind: 'fill', selector: '#reg-password',         value: 'Test@12345' } },
       { description: 'Fill confirm password with different value', action: { kind: 'fill', selector: '#reg-confirm-password', value: 'Different@99' } },
@@ -293,7 +295,7 @@ export const journeys: Journey[] = [
       ...OPEN_REGISTER_MODAL,
       { description: 'Fill first name', action: { kind: 'fill', selector: '#reg-firstname', value: 'Sentinel' } },
       { description: 'Fill last name',  action: { kind: 'fill', selector: '#reg-lastname',  value: 'Test' } },
-      { description: 'Fill email',      action: { kind: 'fill', selector: '#reg-email',     value: 'sentinel-test@sentinel.dev' } },
+      { description: 'Fill email',      action: { kind: 'fill', selector: '#reg-email',     value: testEmail('reg01') } },
       { description: 'Fill mobile number', action: { kind: 'fill', selector: '#reg-mobile-num', value: '821234567' } },
       { description: 'Fill weak password "123"',          action: { kind: 'fill', selector: '#reg-password',         value: '123' } },
       { description: 'Fill confirm with same weak value', action: { kind: 'fill', selector: '#reg-confirm-password', value: '123' } },
@@ -339,7 +341,7 @@ export const journeys: Journey[] = [
       ...OPEN_REGISTER_MODAL,
       { description: 'Fill first name', action: { kind: 'fill', selector: '#reg-firstname', value: 'Sentinel' } },
       { description: 'Fill last name',  action: { kind: 'fill', selector: '#reg-lastname',  value: 'Test' } },
-      { description: 'Fill email',      action: { kind: 'fill', selector: '#reg-email',     value: 'sentinel-test@sentinel.dev' } },
+      { description: 'Fill email',      action: { kind: 'fill', selector: '#reg-email',     value: testEmail('reg01') } },
       { description: 'Fill non-numeric mobile number "abc"', action: { kind: 'fill', selector: '#reg-mobile-num', value: 'abc' } },
       { description: 'Fill password',         action: { kind: 'fill', selector: '#reg-password',         value: 'Test@12345!' } },
       { description: 'Fill confirm password', action: { kind: 'fill', selector: '#reg-confirm-password', value: 'Test@12345!' } },
@@ -470,7 +472,7 @@ export const journeys: Journey[] = [
     // No journey assertion — spec verifies the sendOobCode request was attempted via waitForRequest
     steps: [
       ...OPEN_FORGOT_MODAL,
-      { description: 'Fill valid email', action: { kind: 'fill', selector: '#forgot-email', value: 'sentinel-test@sentinel.dev' } },
+      { description: 'Fill valid email', action: { kind: 'fill', selector: '#forgot-email', value: testEmail('pw01') } },
       CLICK_SEND_RESET,
     ],
   },

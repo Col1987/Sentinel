@@ -19,3 +19,11 @@ export const defaultSite = sites[process.env.TARGET_SITE ?? 'juelhaus'];
 // When true, tests skip route interception and interact with real backends.
 // Set SENTINEL_LIVE_MODE=true only when intentional end-to-end verification is needed.
 export const LIVE_MODE = process.env.SENTINEL_LIVE_MODE === 'true';
+
+export const TEST_EMAIL_BASE  = 'sentinelqa2026@gmail.com';
+export const TEST_NAME_PREFIX = 'SENTINEL TEST';
+export const TEST_PHONE       = '+27 00 000 0001';
+
+export function testEmail(tag: string): string {
+  return `sentinelqa2026+${tag}@gmail.com`;
+}

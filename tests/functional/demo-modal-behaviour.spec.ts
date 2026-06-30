@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { LIVE_MODE } from '../../src/config/sites';
+import { LIVE_MODE, testEmail } from '../../src/config/sites';
 
 const DEMO_CF_URL    = '**/createDemoRequest**';
 const CF_PATTERN     = '**europe-west1-juelhaus-co-za.cloudfunctions.net**';
@@ -26,7 +26,7 @@ async function openAndFillDemoForm(page: import('@playwright/test').Page): Promi
   await page.locator('#demo-name').waitFor({ state: 'visible', timeout: 8_000 });
 
   await page.locator('#demo-name').fill('Sentinel Test');
-  await page.locator('#demo-email').fill('test@sentinel.dev');
+  await page.locator('#demo-email').fill(testEmail('demo01'));
 
   // Select dropdowns (graceful — may not be required)
   const propertyType = page.locator('#demo-property-type');

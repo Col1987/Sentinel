@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { runJourney } from '../../src/runners/journey-runner';
 import { journeys } from '../../src/config/journeys';
-import { LIVE_MODE } from '../../src/config/sites';
+import { LIVE_MODE, testEmail } from '../../src/config/sites';
 
 const find = (id: string) => journeys.find(j => j.id === id)!;
 
@@ -63,7 +63,7 @@ test.describe('Forgot password form', { tag: ['@functional'] }, () => {
     const req = await resetRequest;
     const body = JSON.parse(req.postData() ?? '{}');
 
-    expect(body.data?.email, 'sendPasswordReset request must include the submitted email').toBe('sentinel-test@sentinel.dev');
+    expect(body.data?.email, 'sendPasswordReset request must include the submitted email').toBe(testEmail('pw01'));
   });
 
   // ─── Navigation ───────────────────────────────────────────────────────────

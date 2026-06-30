@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { testEmail } from '../../src/config/sites';
 
 // These tests probe the client-side attack surface: globally exposed JS functions,
 // DOM-level required-attribute bypass, and console noise on page load.
@@ -89,7 +90,7 @@ test.describe('Console injection and client-side hardening', { tag: ['@security'
     });
 
     // Fill only the email and dropdowns — leave name deliberately empty.
-    await page.locator('#demo-email').fill('sentinel-test@sentinel.dev');
+    await page.locator('#demo-email').fill(testEmail('xss01'));
     await page.locator('#demo-property-type').selectOption({ label: 'Airbnb' });
     await page.locator('#demo-num-properties').selectOption({ label: '1' });
 

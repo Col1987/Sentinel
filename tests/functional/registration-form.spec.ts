@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { runJourney } from '../../src/runners/journey-runner';
 import { journeys } from '../../src/config/journeys';
-import { LIVE_MODE } from '../../src/config/sites';
+import { LIVE_MODE, testEmail } from '../../src/config/sites';
 
 const find = (id: string) => journeys.find(j => j.id === id)!;
 
@@ -197,7 +197,7 @@ test.describe('Registration form', { tag: ['@functional'] }, () => {
     const req = await signUpRequest;
     const body = JSON.parse(req.postData() ?? '{}');
 
-    expect(body.email, 'signUp request should include the email').toBe('sentinel-test@sentinel.dev');
+    expect(body.email, 'signUp request should include the email').toBe(testEmail('reg01'));
     expect(body.password, 'signUp request should include a password').toBeTruthy();
   });
 
