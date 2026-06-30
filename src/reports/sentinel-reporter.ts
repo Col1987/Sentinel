@@ -1,6 +1,5 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { LIVE_MODE } from '../config/sites';
 import type {
   Reporter,
   TestCase,
@@ -936,8 +935,9 @@ class SentinelReporter implements Reporter {
   onEnd(_result: FullResult): void {
     fs.mkdirSync('reports', { recursive: true });
     const ts = new Date();
-    const mode       = LIVE_MODE ? 'LIVE' : 'SAFE';
-    const outputPath = path.join('reports', `sentinel-report-${formatFileTimestamp(ts)}-${mode}.html`);
+    const isLive     = process.env.SENTINEL_LIVE_MODE === 'true';
+    const modeTag    = isLive ? 'LIVE' : 'SAFE';
+    const outputPath = path.join('reports', `sentinel-report-${formatFileTimestamp(ts)}-${modeTag}.html`);
     fs.writeFileSync(outputPath, this.buildHtml(ts), 'utf-8');
     process.stdout.write(`\nSentinel report written → ${outputPath}\n`);
   }
