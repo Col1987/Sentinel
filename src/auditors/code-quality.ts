@@ -4,7 +4,7 @@ import type { AuditResult, AuditFinding } from './types';
 // ─── Evaluate-layer types (compile-time only — erased before browser serialisation) ──
 
 interface DuplicateId     { id: string; count: number }
-interface OrphanedHandler { selector: string; attr: string; fnName: string }
+interface OrphanedHandler { selector: string; attr: string; fnName: string; foundInInline: boolean }
 interface DeadForm        { selector: string; hasButtons: boolean }
 interface AssetRef        { type: 'stylesheet' | 'script' | 'preload'; url: string }
 interface BadAria         { selector: string; label: string; reason: string }
@@ -15,9 +15,10 @@ interface MixedContent    { selector: string; attr: string; value: string }
 interface TestDataRef     { pattern: string; count: number; context: string }
 
 interface CodeQualityPageData {
-  duplicateIds:     DuplicateId[];
-  orphanedHandlers: OrphanedHandler[];
-  deadForms:        DeadForm[];
+  duplicateIds:        DuplicateId[];
+  orphanedHandlers:    OrphanedHandler[];
+  externalScriptUrls:  string[];
+  deadForms:           DeadForm[];
   assets:           AssetRef[];
   badAria:          BadAria[];
   duplicateMeta:    DupMeta[];
@@ -46,6 +47,8 @@ export async function auditCodeQuality(
 
       try {
         await page.goto(path, { waitUntil: 'domcontentloaded' });
+        // Wait for deferred scripts to execute — domcontentloaded fires before <script defer> runs.
+        await page.waitForLoadState('load');
       } catch (err) {
         findings.push({
           url: pageUrl, severity: 'info', category: 'code-quality',
@@ -78,6 +81,32 @@ export async function auditCodeQuality(
           const HANDLER_ATTRS = ['onclick','onchange','onsubmit','onfocus','onblur'];
           const orphanedHandlers: OrphanedHandler[] = [];
 
+          // Concatenate all inline script content. Functions defined inside async
+          // callbacks (e.g. Firebase onAuthStateChanged) are absent from window at
+          // evaluation time but ARE present in source — detecting them here avoids
+          // false positives for conditionally-assigned handlers.
+          const inlineScriptSrc = Array.from(
+            document.querySelectorAll<HTMLScriptElement>('script:not([src])'),
+          ).map(s => s.textContent ?? '').join('\n');
+
+          const appearsInInlineSource = (name: string): boolean => {
+            const e = name.replace(/[$]/g, '\\$');
+            return (
+              new RegExp(`function\\s+${e}\\s*\\(`).test(inlineScriptSrc) ||
+              new RegExp(`\\b${e}\\s*=\\s*(?:async\\s+)?(?:function|\\()`).test(inlineScriptSrc) ||
+              new RegExp(`window\\.${e}\\s*=`).test(inlineScriptSrc)
+            );
+          };
+
+          // Same-origin external script URLs — checked in the Node.js layer for
+          // functions defined in external files inside async callbacks.
+          const pageOrigin = window.location.origin;
+          const externalScriptUrls: string[] = Array.from(
+            document.querySelectorAll<HTMLScriptElement>('script[src]'),
+          ).map(s => {
+            try { return new URL(s.getAttribute('src') ?? '', document.baseURI).href; } catch { return ''; }
+          }).filter(url => url.startsWith(pageOrigin) && url !== '');
+
           document.querySelectorAll(
             HANDLER_ATTRS.map(a => `[${a}]`).join(','),
           ).forEach(el => {
@@ -98,7 +127,13 @@ export async function auditCodeQuality(
                 if (charBefore === '.' || SKIP.has(fnName) || seen.has(fnName)) continue;
                 seen.add(fnName);
                 if (typeof (window as any)[fnName] === 'undefined') {
-                  orphanedHandlers.push({ selector, attr, fnName });
+                  // Record whether the name appears in inline source — functions found
+                  // there are likely defined in async callbacks, not truly missing.
+                  // The Node.js layer will also check external scripts before flagging.
+                  orphanedHandlers.push({
+                    selector, attr, fnName,
+                    foundInInline: appearsInInlineSource(fnName),
+                  });
                 }
               }
             }
@@ -270,8 +305,9 @@ export async function auditCodeQuality(
           }
 
           return {
-            duplicateIds, orphanedHandlers, deadForms, assets, badAria, duplicateMeta,
-            localhostRefs, emptyHrefLinks, consoleLogCount, mixedContent, testDataRefs,
+            duplicateIds, orphanedHandlers, externalScriptUrls, deadForms, assets,
+            badAria, duplicateMeta, localhostRefs, emptyHrefLinks, consoleLogCount,
+            mixedContent, testDataRefs,
           };
         });
       } catch (err) {
@@ -296,7 +332,27 @@ export async function auditCodeQuality(
       }
 
       // ── Orphaned handlers ────────────────────────────────────────────────────
-      for (const { selector, attr, fnName } of data.orphanedHandlers) {
+      // Fetch same-origin external scripts to check for function definitions inside
+      // async callbacks — these are absent from window at eval time but are real.
+      let externalScriptSrc = '';
+      for (const url of data.externalScriptUrls) {
+        try {
+          const resp = await apiContext.get(url, { timeout: ASSET_TIMEOUT });
+          if (resp.ok()) externalScriptSrc += '\n' + await resp.text();
+        } catch { /* unfetchable — skip */ }
+      }
+
+      const appearsInExternalSource = (name: string): boolean => {
+        const e = name.replace(/[$]/g, '\\$');
+        return (
+          new RegExp(`function\\s+${e}\\s*\\(`).test(externalScriptSrc) ||
+          new RegExp(`\\b${e}\\s*=\\s*(?:async\\s+)?(?:function|\\()`).test(externalScriptSrc) ||
+          new RegExp(`window\\.${e}\\s*=`).test(externalScriptSrc)
+        );
+      };
+
+      for (const { selector, attr, fnName, foundInInline } of data.orphanedHandlers) {
+        if (foundInInline || appearsInExternalSource(fnName)) continue;
         push({
           severity: 'high',
           message:  `[code-quality-orphaned-handler] ${attr} references undefined function "${fnName}"`,

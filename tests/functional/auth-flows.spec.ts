@@ -224,7 +224,8 @@ test.describe('Auth flows', { tag: ['@functional'] }, () => {
     await page.locator('#reg-terms').click();
     await page.locator('button:has-text("Create Account")').click();
 
-    // Wait for registration to complete — look for verification prompt or account page redirect
+    // Wait for Firebase to process signUp and for the site to respond.
+    // The site either redirects to account.html or shows an inline verification prompt.
     await Promise.race([
       page.waitForURL('**/account.html', { timeout: 15_000 }),
       page.waitForSelector('#verification-prompt, [id*="verif"], .verification-notice, .verify-email', {
@@ -233,14 +234,39 @@ test.describe('Auth flows', { tag: ['@functional'] }, () => {
       }),
     ]).catch(() => {});
 
-    // Navigate to account page to find the resend button if not already there
-    if (!page.url().includes('account.html')) {
-      await page.goto('/account.html', { waitUntil: 'domcontentloaded' });
-    }
+    // Debug: log where we ended up and what verify-related content is on the page
+    const urlAfterReg = page.url();
+    console.log(`[DEBUG] URL after registration: ${urlAfterReg}`);
 
-    // Verify the verification prompt is visible
-    const resendBtn = page.locator('#resend-verify-btn');
-    const resendVisible = await resendBtn.isVisible({ timeout: 5_000 }).catch(() => false);
+    const verifyElements = await page.evaluate(() => {
+      const hits: string[] = [];
+      document.querySelectorAll('*').forEach(el => {
+        const text = (el.textContent ?? '').toLowerCase();
+        const id   = el.id.toLowerCase();
+        if ((text.includes('verify') || text.includes('resend')) && el.children.length === 0) {
+          hits.push(`<${el.tagName.toLowerCase()}${el.id ? ` id="${el.id}"` : ''}> "${el.textContent?.trim().slice(0, 60)}"`);
+        }
+        if (id.includes('verify') || id.includes('resend')) {
+          hits.push(`[by id] <${el.tagName.toLowerCase()} id="${el.id}">`);
+        }
+      });
+      return [...new Set(hits)].slice(0, 20);
+    });
+    console.log(`[DEBUG] verify/resend elements on page: ${verifyElements.length ? verifyElements.join(' | ') : '(none)'}`);
+
+    // The auth modal may still be open after signUp — wait for it to auto-dismiss,
+    // then force-close if the site leaves it open (it would intercept clicks on the banner).
+    const authModal = page.locator('#auth-modal');
+    await authModal.waitFor({ state: 'hidden', timeout: 8_000 }).catch(async () => {
+      console.log('[DEBUG] auth modal still open after registration — closing via × button');
+      await page.locator('#auth-modal .modal-close').click({ force: true }).catch(() => {});
+      await authModal.waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => {});
+    });
+
+    const resendBtn     = page.locator('#resend-verify-btn');
+    const resendVisible = await resendBtn.isVisible().catch(() => false);
+
+    console.log(`[DEBUG] #resend-verify-btn visible on ${urlAfterReg}: ${resendVisible}`);
 
     if (!resendVisible) {
       console.warn(
@@ -272,10 +298,15 @@ test.describe('Auth flows', { tag: ['@functional'] }, () => {
     } else {
       const status = backendResponse.status();
       const url    = backendResponse.url();
-      if (status >= 400) {
+      if (status >= 500) {
         console.error(
           `[FINDING][high] registration-triggers-verification-email: resend request to "${url}" returned HTTP ${status}. ` +
             'The backend rejected the verification email request.',
+        );
+      } else if (status >= 400) {
+        console.warn(
+          `[FINDING][medium] registration-triggers-verification-email: resend request to "${url}" returned HTTP ${status}. ` +
+            'Client error — may be rate limiting or an expected rejection.',
         );
       } else {
         console.log(
@@ -288,6 +319,12 @@ test.describe('Auth flows', { tag: ['@functional'] }, () => {
       backendResponse,
       '[FINDING][critical] #resend-verify-btn must fire a backend request — no request detected within 5 s',
     ).not.toBeNull();
+
+    const responseStatus = backendResponse!.status();
+    expect(
+      responseStatus,
+      `resendVerification Cloud Function returned HTTP ${responseStatus} — server error on /resendVerification endpoint`,
+    ).toBeLessThan(500);
   });
 
   // ─── admin-redirect-on-login ──────────────────────────────────────────────────
