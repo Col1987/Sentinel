@@ -181,9 +181,9 @@ test.describe('Registration form', { tag: ['@functional'] }, () => {
 
   test('happy path — valid data causes a Firebase Auth signUp request', async ({ page }) => {
     if (LIVE_MODE) test.slow();
-    // Block the actual signUp to prevent creating a real account.
-    // waitForRequest resolves as soon as the request is dispatched, before the abort fires.
-    if (!LIVE_MODE) await page.route(SIGN_UP_URL, route => route.abort());
+    // Always abort the signUp response — the test only needs the outgoing request payload.
+    // This prevents accumulating real Firebase accounts on repeated LIVE_MODE runs.
+    await page.route(SIGN_UP_URL, route => route.abort());
 
     const signUpRequest = page.waitForRequest(
       req => req.url().includes('accounts:signUp') && req.method() === 'POST',

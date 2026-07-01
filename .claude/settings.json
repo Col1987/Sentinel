@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "PowerShell(cd \"d:\\\\Documents\\\\Projects\\\\Sentinel\"; $env:SENTINEL_LIVE_MODE=\"true\"; npx playwright test --project=smoke 2>&1 | Select-String -Pattern \"Sentinel report written|passed|failed\")"
+      "PowerShell(cd \"d:\\\\Documents\\\\Projects\\\\Sentinel\"; $env:SENTINEL_LIVE_MODE=\"true\"; npx playwright test --project=smoke 2>&1 | Select-String -Pattern \"Sentinel report written|passed|failed\")",
+      "Bash(npx tsc *)"
     ]
   }
 }

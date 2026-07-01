@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { loginAsAdmin } from '../../src/utils/auth';
-import { LIVE_MODE } from '../../src/config/sites';
+import { LIVE_MODE, testEmail } from '../../src/config/sites';
 
 const CF_PATTERN  = '**europe-west1-juelhaus-co-za.cloudfunctions.net**';
 const SIGN_IN_URL = '**/accounts:signInWithPassword**';
@@ -54,12 +54,14 @@ test.describe('Auth flows', { tag: ['@functional'] }, () => {
     await requireVisible(page, '#login-email', '/ (login modal)');
     await requireVisible(page, '#login-password', '/ (login modal)');
 
-    // In LIVE_MODE use a clearly synthetic address that cannot exist.
-    const testEmail = LIVE_MODE
-      ? 'sentinel-probe@nonexistent-domain-999.com'
+    // Use a Gmail plus-address that is guaranteed not to be registered.
+    // Firebase responds immediately with EMAIL_NOT_FOUND for real domains.
+    // Avoid made-up TLDs — Firebase may hang on the DNS lookup.
+    const probeEmail = LIVE_MODE
+      ? testEmail('wrong-pw-probe')
       : (process.env.ADMIN_EMAIL ?? 'test@example.com');
 
-    await page.locator('#login-email').fill(testEmail);
+    await page.locator('#login-email').fill(probeEmail);
     await page.locator('#login-password').fill('WrongPassword!Sentinel999');
     await page.locator('button[type="submit"]:has-text("Login")').click();
 
@@ -191,6 +193,101 @@ test.describe('Auth flows', { tag: ['@functional'] }, () => {
       'Logout must redirect, show #btn-login, or re-display the admin auth overlay',
     ).toBe(true);
     expect(navAccountVisible, '#nav-account must be hidden after logout').toBe(false);
+  });
+
+  // ─── registration-triggers-verification-email ────────────────────────────────
+
+  test('registration-triggers-verification-email — resend verification button fires a backend request', async ({ page }) => {
+    test.skip(!LIVE_MODE, 'requires real backend — set SENTINEL_LIVE_MODE=true to run');
+    test.slow();
+
+    test.info().annotations.push({
+      type: 'description',
+      description: "Registered a new account using a unique test email address, then navigated to /account.html and clicked the 'Resend verification email' button. Monitored all outbound requests for 5 seconds after the click. If no request to a Firebase/Cloud Functions endpoint fires, the button's event handler is broken (the orphaned-handler code-quality check suspects it references an undefined function).",
+    });
+
+    await page.goto('/');
+
+    // Open register modal via the same steps confirmed in journeys
+    await page.locator('#btn-login').click();
+    await page.locator('#login-email').waitFor({ state: 'visible', timeout: 10_000 });
+    await page.locator('a:has-text("Register")').click();
+    await page.locator('#reg-firstname').waitFor({ state: 'visible', timeout: 10_000 });
+
+    // Fill registration form
+    await page.locator('#reg-firstname').fill('SENTINEL');
+    await page.locator('#reg-lastname').fill('TEST');
+    await page.locator('#reg-email').fill(testEmail(`verify-${Date.now()}`));
+    await page.locator('#reg-mobile-num').fill('821234567');
+    await page.locator('#reg-password').fill('Test@12345!');
+    await page.locator('#reg-confirm-password').fill('Test@12345!');
+    await page.locator('#reg-terms').click();
+    await page.locator('button:has-text("Create Account")').click();
+
+    // Wait for registration to complete — look for verification prompt or account page redirect
+    await Promise.race([
+      page.waitForURL('**/account.html', { timeout: 15_000 }),
+      page.waitForSelector('#verification-prompt, [id*="verif"], .verification-notice, .verify-email', {
+        state: 'visible',
+        timeout: 15_000,
+      }),
+    ]).catch(() => {});
+
+    // Navigate to account page to find the resend button if not already there
+    if (!page.url().includes('account.html')) {
+      await page.goto('/account.html', { waitUntil: 'domcontentloaded' });
+    }
+
+    // Verify the verification prompt is visible
+    const resendBtn = page.locator('#resend-verify-btn');
+    const resendVisible = await resendBtn.isVisible({ timeout: 5_000 }).catch(() => false);
+
+    if (!resendVisible) {
+      console.warn(
+        '[FINDING][medium] registration-triggers-verification-email: #resend-verify-btn not found on /account.html. ' +
+          'Cannot verify resend flow — element may use a different selector or the registration did not complete.',
+      );
+      return;
+    }
+
+    // Monitor for any Firebase / Cloud Functions request after clicking resend
+    const backendRequestPromise = page.waitForResponse(
+      res =>
+        res.url().includes('sendOobCode') ||
+        res.url().includes('identitytoolkit') ||
+        res.url().includes('cloudfunctions.net'),
+      { timeout: 5_000 },
+    ).catch(() => null);
+
+    await resendBtn.click();
+
+    const backendResponse = await backendRequestPromise;
+
+    if (!backendResponse) {
+      console.error(
+        '[FINDING][critical] registration-triggers-verification-email: clicking #resend-verify-btn fired no request ' +
+          'to Firebase or Cloud Functions within 5 seconds. The button handler is broken — likely references an ' +
+          'undefined function (matches code-quality orphaned-handler finding).',
+      );
+    } else {
+      const status = backendResponse.status();
+      const url    = backendResponse.url();
+      if (status >= 400) {
+        console.error(
+          `[FINDING][high] registration-triggers-verification-email: resend request to "${url}" returned HTTP ${status}. ` +
+            'The backend rejected the verification email request.',
+        );
+      } else {
+        console.log(
+          `[INFO] registration-triggers-verification-email: resend request fired to "${url}" — HTTP ${status} ✓`,
+        );
+      }
+    }
+
+    expect(
+      backendResponse,
+      '[FINDING][critical] #resend-verify-btn must fire a backend request — no request detected within 5 s',
+    ).not.toBeNull();
   });
 
   // ─── admin-redirect-on-login ──────────────────────────────────────────────────
