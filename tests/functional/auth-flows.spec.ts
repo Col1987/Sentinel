@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { loginAsAdmin } from '../../src/utils/auth';
 import { LIVE_MODE, testEmail } from '../../src/config/sites';
+import { getLatestVerificationEmail } from '../../src/utils/gmail';
 
 const CF_PATTERN  = '**europe-west1-juelhaus-co-za.cloudfunctions.net**';
 const SIGN_IN_URL = '**/accounts:signInWithPassword**';
@@ -222,6 +223,7 @@ test.describe('Auth flows', { tag: ['@functional'] }, () => {
     await page.locator('#reg-password').fill('Test@12345!');
     await page.locator('#reg-confirm-password').fill('Test@12345!');
     await page.locator('#reg-terms').click();
+    const sentAfter = new Date();
     await page.locator('button:has-text("Create Account")').click();
 
     // Wait for Firebase to process signUp and for the site to respond.
@@ -263,6 +265,60 @@ test.describe('Auth flows', { tag: ['@functional'] }, () => {
       await authModal.waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => {});
     });
 
+    // ── Verification email delivery ──────────────────────────────────────────
+    // Firebase sends a verification email automatically on signUp. Poll the
+    // sentinelqa2026@gmail.com inbox for it and follow the link.
+    const verificationLink = await getLatestVerificationEmail(sentAfter);
+
+    if (!verificationLink) {
+      console.error(
+        '[FINDING][critical] registration-triggers-verification-email: verification email did not ' +
+          'arrive within 30 seconds of registration.',
+      );
+    } else {
+      console.log(`[INFO] verification email received — link: ${verificationLink}`);
+
+      const linkUrl  = new URL(verificationLink);
+      const linkHost = linkUrl.hostname.replace(/^www\./, '');
+
+      if (linkHost !== 'juelhaus.co.za') {
+        console.error(
+          `[FINDING][high] registration-triggers-verification-email: verification link points to ` +
+            `"${linkHost}" instead of juelhaus.co.za. Firebase is sending users to the default ` +
+            'firebaseapp.com domain — update the "Email action handler URL" in Firebase Console ' +
+            'to https://www.juelhaus.co.za/__/auth/action.',
+        );
+      }
+
+      await page.goto(verificationLink, { waitUntil: 'domcontentloaded' });
+
+      const finalHost = new URL(page.url()).hostname.replace(/^www\./, '');
+      if (finalHost !== 'juelhaus.co.za') {
+        console.error(
+          `[FINDING][high] registration-triggers-verification-email: after following the verification ` +
+            `link, the browser landed on "${finalHost}" not juelhaus.co.za. ` +
+            'The action handler URL may not be configured to redirect to the production domain.',
+        );
+      }
+
+      const pageText = (await page.locator('body').textContent() ?? '').toLowerCase();
+      const showsSuccess = pageText.includes('verified') || pageText.includes('verification') ||
+        pageText.includes('confirmed') || pageText.includes('success');
+
+      if (showsSuccess) {
+        console.log('[INFO] registration-triggers-verification-email: verification page shows success text ✓');
+      } else {
+        console.warn(
+          '[FINDING][medium] registration-triggers-verification-email: verification link was followed ' +
+            `but the page on "${finalHost}" shows no recognisable success confirmation.`,
+        );
+      }
+
+      // Navigate back to the homepage so the resend-button check below has the right context
+      await page.goto('/', { waitUntil: 'domcontentloaded' });
+    }
+
+    // ── Resend button ────────────────────────────────────────────────────────
     const resendBtn     = page.locator('#resend-verify-btn');
     const resendVisible = await resendBtn.isVisible().catch(() => false);
 
