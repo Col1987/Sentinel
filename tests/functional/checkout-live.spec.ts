@@ -1,186 +1,11 @@
 import { test, expect } from '@playwright/test';
-import { LIVE_MODE, TEST_NAME_PREFIX, testEmail } from '../../src/config/sites';
+import { LIVE_MODE } from '../../src/config/sites';
 import { loginAsAdmin } from '../../src/utils/auth';
-
-// ── Constants confirmed from site discovery ───────────────────────────────────
-
-const PACK_ID           = 'wooden-whiskey';
-const PACK_LABEL        = 'The Juel';       // shown as "Item 1 of 1: The Juel" on checkout
-const EXPECTED_SUBTOTAL = 'R1,360.00';      // confirmed from pay button text (base + delivery)
-
-// Realistic South African address values; postal code matches Cape Town
-const ADDR = {
-  property: 'Sentinel QA Property',
-  unit:     '1',
-  street:   'QA Avenue',
-  suburb:   'Green Point',
-  city:     'Cape Town',
-  province: 'Western Cape',
-  postal:   '8001',
-  billing:  '1 QA Avenue, Green Point, Cape Town, 8001',
-};
-const GUEST    = `${TEST_NAME_PREFIX} GUEST`;
-const CHECKIN  = '2026-07-15';
-const CHECKOUT_DATE = '2026-07-18';
-
-// ── Step helpers ─────────────────────────────────────────────────────────────
-
-// Registers a fresh non-admin Firebase account so the test lands on / with a
-// normal user session. Using loginAsAdmin is not viable here because the admin
-// custom claim causes an automatic redirect to /admin.html on every navigation
-// to /, making addToCart (homepage-only) unreachable.
-async function registerForCheckout(page: import('@playwright/test').Page): Promise<string> {
-  const email = testEmail(`checkout-${Date.now()}`);
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.locator('#btn-login').click();
-  await page.locator('a:has-text("Register")').click();
-  await page.locator('#reg-firstname').waitFor({ state: 'visible', timeout: 5_000 });
-  await page.locator('#reg-firstname').fill('SENTINEL');
-  await page.locator('#reg-lastname').fill('CHECKOUT');
-  await page.locator('#reg-email').fill(email);
-  await page.locator('#reg-mobile-num').fill('821234567');
-  await page.locator('#reg-password').fill('Test@12345!');
-  await page.locator('#reg-confirm-password').fill('Test@12345!');
-  await page.locator('#reg-terms').click();
-  await page.locator('button:has-text("Create Account")').click();
-
-  // After registration the modal may show a verification-email notice rather than
-  // closing automatically. Wait briefly; if still open, force-close via the X button.
-  await page.locator('#auth-modal').waitFor({ state: 'hidden', timeout: 8_000 }).catch(async () => {
-    await page.locator('#auth-modal .modal-close').click({ force: true });
-    await page.waitForTimeout(500);
-  });
-  console.log(`[INFO] registered checkout test account: ${email}`);
-  return email;
-}
-
-async function addPackAndGoToCheckout(page: import('@playwright/test').Page): Promise<void> {
-  await page.evaluate((id: string) => (window as any).addToCart(id), PACK_ID);
-  await page.waitForTimeout(600);
-  await page.goto('/checkout.html', { waitUntil: 'domcontentloaded' });
-  // Allow checkout JS to read cart state and render first step
-  await page.waitForTimeout(1_500);
-}
-
-// Date-picker inputs use a custom widget — set via JS to bypass the UI widget
-async function setDateField(
-  page: import('@playwright/test').Page,
-  id: string,
-  value: string,
-): Promise<void> {
-  await page.evaluate(
-    ({ id, value }: { id: string; value: string }) => {
-      const el = document.getElementById(id) as HTMLInputElement | null;
-      if (!el) return;
-      el.value = value;
-      el.dispatchEvent(new Event('input',  { bubbles: true }));
-      el.dispatchEvent(new Event('change', { bubbles: true }));
-    },
-    { id, value },
-  );
-}
-
-// Fills the Property & Guest Details step (step 1) then advances through ALL
-// config sub-steps (Wi-Fi, branding, house rules, etc.) until the delivery step
-// becomes active.
-async function fillConfigStep(page: import('@playwright/test').Page): Promise<void> {
-  await page.locator('#cfg-property').fill(ADDR.property);
-
-  // validateStep1() reads #cfg-address directly — fill it as well as the breakdown.
-  await page.locator('#cfg-address').fill(`${ADDR.unit} ${ADDR.street}, ${ADDR.suburb}, ${ADDR.city}`);
-
-  // Expand manual address breakdown so the sub-fields persist to the order record
-  await page.locator('#addr-breakdown-btn').click();
-  await page.locator('#cfg-addr-street').waitFor({ state: 'visible', timeout: 6_000 });
-  await page.locator('#cfg-addr-unit').fill(ADDR.unit);
-  await page.locator('#cfg-addr-street').fill(ADDR.street);
-  await page.locator('#cfg-addr-suburb').fill(ADDR.suburb);
-  await page.locator('#cfg-addr-city').fill(ADDR.city);
-  await page.locator('#cfg-addr-province').fill(ADDR.province);
-  await page.locator('#cfg-addr-postal').fill(ADDR.postal);
-
-  await page.locator('#cfg-guest').fill(GUEST);
-
-  // Host Contact (WhatsApp) — both fields are required by validateStep1()
-  await page.locator('#cfg-host-name').fill('SENTINEL HOST');
-  await page.locator('#cfg-host-phone-num').fill('821234567');
-
-  await setDateField(page, 'cfg-checkin',  CHECKIN);
-  await setDateField(page, 'cfg-checkout', CHECKOUT_DATE);
-
-  // ── Loop through all config sub-steps until the delivery step appears ───────
-  // The checkout has multiple sub-steps per cart item: property details →
-  // Wi-Fi → branding → (optional: house rules, restaurants, activities) →
-  // delivery. Each requires "Continue →" and some require specific inputs.
-  const deadline = Date.now() + 90_000;
-
-  while (Date.now() < deadline) {
-    // Done when delivery step is visible
-    if (await page.locator('button:has-text("Proceed to Payment →")').isVisible({ timeout: 1_000 }).catch(() => false)) {
-      console.log('[INFO] fillConfigStep: reached delivery step ✓');
-      return;
-    }
-
-    // Wi-Fi sub-step: must explicitly skip or add credentials
-    const wifiSkip = page.locator('button:has-text("Continue Without Wi-Fi")');
-    if (await wifiSkip.isVisible({ timeout: 1_000 }).catch(() => false)) {
-      await wifiSkip.click();
-      await page.waitForTimeout(500);
-      continue;
-    }
-
-    // Branding sub-step: brand name is required; fill it if the error is shown
-    const brandRequired = page.locator('text=Brand / Property Name is required');
-    if (await brandRequired.isVisible({ timeout: 1_000 }).catch(() => false)) {
-      const brandInput = page.locator('input[placeholder*="Bonita"], input[placeholder*="The Hut"]');
-      await brandInput.fill('Sentinel QA');
-      await page.waitForTimeout(300);
-    }
-
-    // Welcome Card Content sub-step: choose Quick Setup (auto-fills house rules
-    // and nearby restaurants from the property address — no manual entry needed)
-    const quickSetupBtn = page.locator('button:has-text("Quick Setup")');
-    if (await quickSetupBtn.isVisible({ timeout: 1_000 }).catch(() => false)) {
-      await quickSetupBtn.click();
-      await page.waitForTimeout(1_500); // allow auto-fill
-      continue;
-    }
-
-    // Click the primary "Continue →" to advance
-    const continueBtn = page.locator('button:has-text("Continue →")').first();
-    if (await continueBtn.isVisible({ timeout: 1_000 }).catch(() => false)) {
-      await continueBtn.click();
-      await page.waitForTimeout(800);
-    } else {
-      // No Continue button found — may have reached a non-standard step; stop looping
-      break;
-    }
-  }
-}
-
-// Proceeds through the delivery step, upgrade-modal, and optional save-config step.
-// Assumes fillConfigStep() already placed us at the delivery step.
-async function advanceThroughDeliveryToPayment(page: import('@playwright/test').Page): Promise<void> {
-  // Delivery step should already be active after fillConfigStep loop
-  await page.locator('button:has-text("Proceed to Payment →")').waitFor({ state: 'visible', timeout: 15_000 });
-  await page.locator('button:has-text("Proceed to Payment →")').click();
-
-  // Upgrade personalisation modal (startUpgradePersonalisation) — skip if shown
-  const skipBtn = page.locator('button:has-text("Skip upgrades")');
-  if (await skipBtn.isVisible({ timeout: 5_000 }).catch(() => false)) {
-    await skipBtn.click();
-  }
-
-  // Optional "Save Property Configuration?" step — skip via its last button
-  const saveStep = page.locator('#checkout-step-save');
-  if (await saveStep.isVisible({ timeout: 3_000 }).catch(() => false)) {
-    // Last button in the step is the "skip/no" option regardless of exact label
-    await saveStep.locator('button').last().click();
-  }
-
-  // Wait for the payment step to become active
-  await page.locator('#checkout-step-payment').waitFor({ state: 'visible', timeout: 10_000 });
-}
+import { getLatestOrderConfirmationEmail } from '../../src/utils/gmail';
+import {
+  PACK_LABEL, EXPECTED_SUBTOTAL, ADDR,
+  registerForCheckout, addPackAndGoToCheckout, fillConfigStep, advanceThroughDeliveryToPayment,
+} from './checkout-helpers';
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
@@ -612,6 +437,142 @@ test.describe('Checkout flows (LIVE_MODE only)', { tag: ['@functional'] }, () =>
       console.warn('[FINDING][low] checkout-order-appears-in-admin: no status badge found in order detail modal.');
     } else {
       console.log(`[INFO] checkout-order-appears-in-admin: order status is "${statusText}" ✓`);
+    }
+  });
+
+  // ── 5. Confirmation email tracking link ───────────────────────────────────────
+
+  test('checkout-confirmation-email-tracking-link — order confirmation email contains a working track link that shows the correct order', async ({ page }) => {
+    test.slow();
+    test.info().annotations.push({
+      type: 'description',
+      description: `Completes a full sandbox checkout for '${PACK_LABEL}', then polls Gmail for the order confirmation email from no-reply@juelhaus.co.za. Extracts the "Track Your Order" link, verifies it deep-links directly to the order (via ?id= or ?waybill= query parameter), and confirms the tracking page shows the correct pack name and order status without any manual input. If the email links to a generic tracking page instead of deep-linking, that is flagged as a medium finding — the tracking page supports query-parameter deep links, so not using them creates unnecessary friction for customers.`,
+    });
+
+    const checkoutEmail = await registerForCheckout(page);
+    await addPackAndGoToCheckout(page);
+    await fillConfigStep(page);
+    await advanceThroughDeliveryToPayment(page);
+    await page.locator('#co-billing-addr').fill(ADDR.billing);
+
+    // Capture the order ID from the CF response — needed as fallback for manual
+    // tracking input if the email links to the generic /track.html without params.
+    const cfResponsePromise = page.waitForResponse(
+      res => res.url().includes('cloudfunctions.net') && res.request().method() === 'POST',
+      { timeout: 30_000 },
+    ).catch(() => null);
+
+    // Mark time just before payment — Gmail polling uses this to exclude earlier
+    // emails (e.g. the account verification sent during registerForCheckout).
+    const sentAfter = new Date();
+
+    const navigationPromise = page.waitForNavigation({ timeout: 30_000 }).catch(() => null);
+    await page.locator('#pay-now-btn').click();
+
+    const [cfResp] = await Promise.all([cfResponsePromise, navigationPromise]);
+
+    // Extract order ID from the CF response body for the manual-entry fallback
+    let orderId: string | null = null;
+    if (cfResp) {
+      const body = await cfResp.json().catch(() => ({})) as Record<string, unknown>;
+      const result = body?.result as Record<string, unknown> | undefined;
+      orderId = (result?.orderId ?? result?.id ?? body?.orderId ?? null) as string | null;
+    }
+    if (orderId) {
+      console.log(`[INFO] checkout-confirmation-email-tracking-link: CF orderId=${orderId}`);
+    }
+
+    console.log(`[INFO] checkout-confirmation-email-tracking-link: polling Gmail for confirmation email sent to ${checkoutEmail}`);
+
+    const trackingUrl = await getLatestOrderConfirmationEmail(sentAfter);
+
+    if (!trackingUrl) {
+      console.error(
+        `[FINDING][high] checkout-confirmation-email-tracking-link: no order confirmation email ` +
+          `with a "Track Your Order" link arrived in the sentinelqa2026@gmail.com inbox within 60 s ` +
+          `of checkout completion for ${checkoutEmail}. Customers may not receive order confirmation emails.`,
+      );
+      return;
+    }
+
+    console.log(`[TRACK LINK] ${trackingUrl}`);
+
+    // ── Determine whether the email deep-links to the order ────────────────────
+    const parsedUrl  = new URL(trackingUrl);
+    const idParam    = parsedUrl.searchParams.get('id');
+    const waybillParam = parsedUrl.searchParams.get('waybill');
+    const hasDeepLink = Boolean(idParam ?? waybillParam);
+
+    // If the CF returned no orderId, try to infer it from the URL's ?id= param
+    if (!orderId && idParam) orderId = idParam;
+
+    if (!hasDeepLink) {
+      // The email links to the bare tracking page without pre-filling the order.
+      // The tracking page supports ?id= deep links, so this is an avoidable friction point.
+      console.warn(
+        '[FINDING][medium] checkout-confirmation-email-tracking-link: order confirmation email links ' +
+          `to a generic tracking page ("${trackingUrl}") instead of deep-linking directly to the order, ` +
+          'despite the tracking page supporting ?id= and ?waybill= query-parameter deep links elsewhere. ' +
+          'This forces the customer to manually locate and enter their order number.',
+      );
+    } else {
+      console.log(
+        `[INFO] checkout-confirmation-email-tracking-link: confirmation email correctly deep-links ` +
+          `to the order via ${idParam ? '?id=' : '?waybill='}${idParam ?? waybillParam} ✓`,
+      );
+    }
+
+    // ── Navigate to the tracking URL ──────────────────────────────────────────
+    await page.goto(trackingUrl, { waitUntil: 'domcontentloaded' });
+
+    if (!hasDeepLink && orderId) {
+      // Generic link — manually enter the order ID and submit
+      await page.locator('#track-input').waitFor({ state: 'visible', timeout: 5_000 });
+      await page.locator('#track-input').fill(orderId);
+      await page.locator('button.btn-track').click();
+    }
+
+    // Wait for the result card to render (Firestore fetch is async)
+    const resultVisible = await page.locator('#track-result .result-card')
+      .waitFor({ state: 'visible', timeout: 10_000 })
+      .then(() => true)
+      .catch(() => false);
+
+    if (!resultVisible) {
+      const resultText = ((await page.locator('#track-result').textContent().catch(() => '')) ?? '').trim();
+      if (resultText.toLowerCase().includes('no order found')) {
+        console.error(
+          `[FINDING][high] checkout-confirmation-email-tracking-link: tracking page reported ` +
+            `"No order found" for the ID from the confirmation email link. ` +
+            `orderId=${orderId ?? 'unknown'} trackingUrl=${trackingUrl}`,
+        );
+      } else {
+        console.error(
+          `[FINDING][high] checkout-confirmation-email-tracking-link: tracking page result card ` +
+            `did not appear within 10 s. trackingUrl=${trackingUrl}`,
+        );
+      }
+      return;
+    }
+
+    // ── Verify the result card content ─────────────────────────────────────────
+    const packTitle = ((await page.locator('#track-result .result-title').textContent().catch(() => '')) ?? '').trim();
+    if (!packTitle.includes(PACK_LABEL) && !packTitle.toLowerCase().includes('juel')) {
+      console.error(
+        `[FINDING][high] checkout-confirmation-email-tracking-link: tracking page shows pack ` +
+          `"${packTitle}" instead of expected "${PACK_LABEL}".`,
+      );
+    } else {
+      console.log(`[INFO] checkout-confirmation-email-tracking-link: tracking page shows correct pack "${packTitle}" ✓`);
+    }
+
+    const trackStatus = ((await page.locator('#track-result .status-badge').textContent().catch(() => '')) ?? '').trim();
+    if (!trackStatus) {
+      console.warn(
+        '[FINDING][low] checkout-confirmation-email-tracking-link: tracking page shows no status badge.',
+      );
+    } else {
+      console.log(`[INFO] checkout-confirmation-email-tracking-link: tracking page status is "${trackStatus}" ✓`);
     }
   });
 
