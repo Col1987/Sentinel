@@ -67,7 +67,11 @@ export async function setDateField(page: Page, id: string, value: string): Promi
 
 // Fills Property & Guest Details then loops through all config sub-steps
 // (Wi-Fi, branding, house rules, etc.) until the delivery step appears.
-export async function fillConfigStep(page: Page): Promise<void> {
+// Pass wifiConfig to fill in Wi-Fi credentials; omit to click "Continue Without Wi-Fi".
+export async function fillConfigStep(
+  page: Page,
+  wifiConfig?: { ssid: string; password: string },
+): Promise<void> {
   await page.locator('#cfg-property').fill(ADDR.property);
   await page.locator('#cfg-address').fill(`${ADDR.unit} ${ADDR.street}, ${ADDR.suburb}, ${ADDR.city}`);
   await page.locator('#addr-breakdown-btn').click();
@@ -92,7 +96,14 @@ export async function fillConfigStep(page: Page): Promise<void> {
     }
     const wifiSkip = page.locator('button:has-text("Continue Without Wi-Fi")');
     if (await wifiSkip.isVisible({ timeout: 1_000 }).catch(() => false)) {
-      await wifiSkip.click();
+      if (wifiConfig) {
+        // Fields #cfg-wifi-ssid and #cfg-wifi-pw are already visible at this sub-step.
+        await page.locator('#cfg-wifi-ssid').fill(wifiConfig.ssid);
+        await page.locator('#cfg-wifi-pw').fill(wifiConfig.password);
+        await page.locator('button:has-text("Continue →")').first().click();
+      } else {
+        await wifiSkip.click();
+      }
       await page.waitForTimeout(500);
       continue;
     }
@@ -135,10 +146,14 @@ export async function advanceThroughDeliveryToPayment(page: Page): Promise<void>
 // Runs the full checkout flow, submits payment, and returns the checkout email
 // and the order ID captured from the Cloud Function response.
 // On return the browser is on the PayFast sandbox redirect page.
-export async function runCheckoutFlow(page: Page): Promise<{ checkoutEmail: string; orderId: string | null }> {
+// Pass wifiConfig to include Wi-Fi credentials in the order; omit to skip Wi-Fi.
+export async function runCheckoutFlow(
+  page: Page,
+  options?: { wifiConfig?: { ssid: string; password: string } },
+): Promise<{ checkoutEmail: string; orderId: string | null }> {
   const checkoutEmail = await registerForCheckout(page);
   await addPackAndGoToCheckout(page);
-  await fillConfigStep(page);
+  await fillConfigStep(page, options?.wifiConfig);
   await advanceThroughDeliveryToPayment(page);
   await page.locator('#co-billing-addr').fill(ADDR.billing);
 
