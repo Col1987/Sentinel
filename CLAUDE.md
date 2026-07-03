@@ -91,6 +91,19 @@ test('...', async ({ page }) => {
 
 When LIVE_MODE is true a warning is printed at the start of the run via `globalSetup`. Only enable LIVE_MODE when intentional end-to-end verification against real backends is needed.
 
+### Mode-agnostic test design
+
+Every test should work in BOTH safe mode and LIVE_MODE by default, asserting whatever it can prove in the active mode rather than being written exclusively for one mode.
+
+- **Safe mode:** intercept the outgoing request and assert on what the CLIENT sends (payload shape, whether validation fired before the request, whether manipulated/malicious data appears in the request body).
+- **LIVE_MODE:** let the request through and add ADDITIONAL assertions on what the SERVER actually did (response status, database state, whether admin shows the record, whether manipulated data was accepted and stored).
+
+Use `if (LIVE_MODE) { ...extra assertions... }` to layer on deeper checks, not `test.skip(!LIVE_MODE)` to gate the whole test.
+
+Reserve `test.skip(!LIVE_MODE, 'reason')` ONLY for tests that are structurally impossible to verify without a real backend — for example, race-condition/idempotency tests that require two real concurrent requests hitting real infrastructure. Document the specific reason in the skip message every time this exception is used.
+
+When a test fails, determine whether the failure is caused by the environment (safe mode correctly blocking a mocked request) or a genuine system defect before logging a finding. A safe-mode test that "fails" only because a request was intercepted is not a finding — that is expected mock behavior.
+
 ### Reporting
 - Reports output to `reports/` as self-contained HTML files
 - Each report includes: timestamp, target URL, pass/fail summary, categorised findings with severity (critical/high/medium/low/info), screenshots where relevant
