@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { LIVE_MODE } from '../../src/config/sites';
 import { loginAsAdmin } from '../../src/utils/auth';
 import {
-  ADDR,
+  ADDR, PACK_ID,
   registerForCheckout, addPackAndGoToCheckout, fillConfigStep, advanceThroughDeliveryToPayment,
 } from '../functional/checkout-helpers';
 
@@ -219,6 +219,17 @@ function findFieldsInPayload(obj: unknown, pattern: RegExp, path = ''): Array<{ 
     results.push(...findFieldsInPayload(v, pattern, fullPath));
   }
   return results;
+}
+
+// Mutates the last character of an order ID so the resulting ID is invalid in Firestore.
+// The 20-char random alphanumeric space makes a collision with a real order negligible.
+function modifyOrderId(id: string): string {
+  if (!id || id.length < 2) return `${id}X`;
+  const CHARS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+  const last  = id[id.length - 1];
+  const pos   = CHARS.indexOf(last);
+  const next  = pos >= 0 ? CHARS[(pos + 1) % CHARS.length] : 'X';
+  return id.slice(0, -1) + next;
 }
 
 // ── Admin order check (LIVE_MODE only) ───────────────────────────────────────
@@ -644,6 +655,287 @@ test.describe('Checkout abuse — price and quantity manipulation', { tag: ['@se
           'completed or admin search did not match. Manual verification required.',
       );
     }
+  });
+
+  // ── 4. Concurrent-session cart conflict ───────────────────────────────────
+
+  test('concurrent-session-cart-conflict — two sessions for the same account adding different packs do not corrupt each other\'s cart', async ({ page, browser }) => {
+    test.slow();
+    test.info().annotations.push({
+      type: 'description',
+      description:
+        'Registers a fresh account then opens two browser contexts authenticated as the same user. ' +
+        'Context A adds one pack to its cart; Context B adds a different pack. Context A then reloads ' +
+        'to trigger any Firestore cart subscription. We inspect Context A\'s localStorage cart for its pack. ' +
+        '\n\n' +
+        'In safe mode: contexts use independent localStorage with no server sync — isolation is expected. ' +
+        'In LIVE_MODE: if the app syncs cart state via Firestore, a subscription callback on reload could ' +
+        'overwrite Context A\'s cart with what Context B wrote last. ' +
+        'Overwrite (data loss) = [FINDING][high]. Additive merge or full isolation = [INFO] pass.',
+    });
+
+    await registerForCheckout(page);
+    const storageState = await page.context().storageState();
+
+    // Enumerate pack IDs on the homepage to find a second pack for Context B.
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(2_000);
+
+    const allPackIds = await page.evaluate((): string[] => {
+      const ids = new Set<string>();
+      document.querySelectorAll<HTMLElement>('[onclick*="addToCart"]').forEach(el => {
+        const m = (el.getAttribute('onclick') ?? '').match(/addToCart\(['"]([^'"]+)['"]\)/);
+        if (m?.[1]) ids.add(m[1]);
+      });
+      document.querySelectorAll<HTMLElement>('[data-pack-id]').forEach(el => {
+        const id = el.getAttribute('data-pack-id');
+        if (id) ids.add(id);
+      });
+      return [...ids];
+    });
+
+    const PACK_A   = PACK_ID;
+    const PACK_B   = allPackIds.find(id => id !== PACK_A) ?? PACK_A;
+    const samePack = PACK_A === PACK_B;
+    console.log(
+      `[INFO] concurrent-session-cart-conflict: ${allPackIds.length} pack(s) found. ` +
+        `Pack A="${PACK_A}", Pack B="${PACK_B}" (${samePack ? 'same — only one available' : 'different packs'}).`,
+    );
+
+    const ctxB  = await browser.newContext({ storageState });
+    const pageB = await ctxB.newPage();
+
+    try {
+      await page.goto('/', { waitUntil: 'domcontentloaded' });
+      await pageB.goto('/', { waitUntil: 'domcontentloaded' });
+      await page.waitForTimeout(1_500);
+      await pageB.waitForTimeout(1_500);
+
+      // Context A: add Pack A
+      await page.evaluate((id: string) => (window as any).addToCart(id), PACK_A);
+      await page.waitForTimeout(600);
+
+      // Context B: add Pack B
+      await pageB.evaluate((id: string) => (window as any).addToCart(id), PACK_B);
+      await pageB.waitForTimeout(600);
+
+      // Allow Firestore cart sync to propagate (LIVE_MODE only — safe mode has no server sync)
+      if (LIVE_MODE) await page.waitForTimeout(4_000);
+
+      // Context A reloads — triggers any Firestore subscription that might overwrite localStorage
+      await page.goto('/', { waitUntil: 'domcontentloaded' });
+      await page.waitForTimeout(2_500);
+
+      const cartARaw = await page.evaluate(() => localStorage.getItem('bh_cart') ?? '');
+      const cartBRaw = await pageB.evaluate(() => localStorage.getItem('bh_cart') ?? '');
+
+      console.log(`[INFO] concurrent-session-cart-conflict: Cart A (bh_cart): ${cartARaw.slice(0, 200) || '(empty)'}`);
+      console.log(`[INFO] concurrent-session-cart-conflict: Cart B (bh_cart): ${cartBRaw.slice(0, 200) || '(empty)'}`);
+
+      if (!samePack) {
+        const cartAHasA    = cartARaw.includes(PACK_A);
+        const cartAHasBOnly = !cartAHasA && cartARaw.includes(PACK_B);
+
+        if (cartAHasBOnly) {
+          console.error(
+            `[FINDING][high] concurrent-session-cart-conflict: Context A's cart was silently overwritten by Context B — ` +
+              `Pack A ("${PACK_A}") is gone; only Pack B ("${PACK_B}") remains. ` +
+              'A Firestore cart subscription is destructively replacing local cart state across concurrent sessions ' +
+              'for the same account. A guest with two browser tabs open would lose one tab\'s cart on reload.',
+          );
+          expect.soft(false, 'Context A cart must not be overwritten by Context B for the same account').toBe(true);
+        } else if (cartAHasA && cartARaw.includes(PACK_B)) {
+          console.log(
+            '[INFO] concurrent-session-cart-conflict: Context A cart contains both packs after reload — ' +
+              'Firestore sync performs an additive merge (no data loss) ✓',
+          );
+        } else if (cartAHasA) {
+          console.log(
+            `[INFO] concurrent-session-cart-conflict: Context A retains Pack A ("${PACK_A}") after reload ` +
+              '— sessions are isolated from each other ✓',
+          );
+        } else if (!cartARaw) {
+          console.warn(
+            '[INFO] concurrent-session-cart-conflict: Context A cart is empty after reload — ' +
+              'bh_cart may have been cleared by the page load cycle. Not a data-loss finding; check manually.',
+          );
+        } else {
+          console.warn(
+            `[INFO] concurrent-session-cart-conflict: Cart A content after reload: "${cartARaw.slice(0, 150)}". ` +
+              `Pack A ("${PACK_A}") not detected by string match — inspect structure manually.`,
+          );
+        }
+      } else {
+        console.log(
+          '[INFO] concurrent-session-cart-conflict: only one pack available — both contexts used the same pack. ' +
+            `Cart A after reload: "${cartARaw.slice(0, 150) || '(empty)'}".`,
+        );
+      }
+    } finally {
+      await ctxB.close();
+    }
+  });
+
+  // ── 5. Order ID enumeration ───────────────────────────────────────────────
+
+  test('order-id-enumeration — probing the tracking page with a modified order ID must not return real customer data', async ({ page }) => {
+    test.slow();
+    test.info().annotations.push({
+      type: 'description',
+      description:
+        'Tests whether the order tracking page leaks customer data when given a plausible but non-existent order ID. ' +
+        '\n\n' +
+        'In LIVE_MODE: creates a real Firestore order via the checkout flow, captures the 20-character random ' +
+        'order ID from the Cloud Function response, mutates its last character to produce an ID that cannot ' +
+        'exist in Firestore, then navigates to /track.html?id=<modified>. CF and Firestore responses are ' +
+        'scanned for customer PII. Any real data = [FINDING][critical]. ' +
+        '\n\n' +
+        'In safe mode: uses a synthetic probe ID. All Firestore and CF requests from the tracking page are ' +
+        'intercepted and aborted. We confirm the page makes an outbound lookup and does not crash or display ' +
+        'unexpected content when the backend is unavailable.',
+    });
+
+    const pageErrors: string[] = [];
+    page.on('pageerror', err => pageErrors.push(err.message));
+
+    let probeId: string;
+
+    if (LIVE_MODE) {
+      // The orderId is CLIENT-GENERATED and sent in the CF POST request body as data.orderId.
+      // Capturing from the request (not the response) is more reliable — the request fires
+      // synchronously before any page navigation, so there is no race with the PayFast redirect.
+      // IMPORTANT: set up waitForRequest AFTER advanceThroughDeliveryToPayment — a shipping-rate
+      // CF call fires during that step and would otherwise be captured first.
+      await registerForCheckout(page);
+      await addPackAndGoToCheckout(page);
+      await fillConfigStep(page);
+      await advanceThroughDeliveryToPayment(page);
+      await page.locator('#co-billing-addr').fill(ADDR.billing);
+
+      const cfReqPromise = page.waitForRequest(
+        req => req.url().includes('cloudfunctions.net') && req.method() === 'POST',
+        { timeout: 30_000 },
+      ).catch(() => null);
+
+      const navPromise = page.waitForNavigation({ timeout: 30_000 }).catch(() => null);
+      await page.locator('#pay-now-btn').click();
+
+      // Await both so we hold the page context long enough for the request to settle
+      const [cfReq] = await Promise.all([cfReqPromise, navPromise]);
+
+      let realOrderId: string | null = null;
+      if (cfReq) {
+        const postData = cfReq.postData() ?? '';
+        console.log(`[INFO] order-id-enumeration: CF POST request body: ${postData.slice(0, 400)}`);
+        try {
+          const parsed = JSON.parse(postData) as Record<string, any>;
+          realOrderId = parsed?.data?.orderId ?? null;
+        } catch { /* non-JSON body */ }
+      } else {
+        console.warn('[INFO] order-id-enumeration: waitForRequest timed out — CF POST not observed before navigation.');
+      }
+
+      if (realOrderId) {
+        probeId = modifyOrderId(realOrderId);
+        console.log(`[INFO] order-id-enumeration: real orderId="${realOrderId}" → probe="${probeId}"`);
+      } else {
+        probeId = modifyOrderId('q1VXWrGM80XUpLfbWIXR');
+        console.warn(`[INFO] order-id-enumeration: orderId not captured from request — using modified synthetic "${probeId}"`);
+      }
+    } else {
+      probeId = 'SENTINEL00000PROBE001';
+      console.log(`[INFO] order-id-enumeration: safe mode — probing with synthetic ID "${probeId}"`);
+    }
+
+    // Capture outbound lookups the tracking page makes, and collect response bodies in LIVE_MODE.
+    const trackingRequests: Array<{ url: string; method: string }> = [];
+    const cfResponseBodies: string[] = [];
+
+    if (!LIVE_MODE) {
+      await page.route('**firestore.googleapis.com**', async route => {
+        trackingRequests.push({ url: route.request().url().slice(0, 100), method: route.request().method() });
+        await route.abort();
+      });
+      await page.route(CF_PATTERN, async route => {
+        trackingRequests.push({ url: route.request().url(), method: route.request().method() });
+        await route.abort();
+      });
+    } else {
+      page.on('response', async res => {
+        if (/firestore\.googleapis\.com|cloudfunctions\.net/i.test(res.url())) {
+          const text = await res.text().catch(() => '');
+          if (text) cfResponseBodies.push(text.slice(0, 600));
+        }
+      });
+    }
+
+    await page.goto(`/track.html?id=${encodeURIComponent(probeId)}`, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(4_000); // allow Firestore lookup to settle
+
+    const bodyText   = await page.evaluate(() => document.body.innerText.toLowerCase());
+    const rawHtml    = await page.content();
+    const allContent = [bodyText, rawHtml, ...cfResponseBodies].join('\n');
+
+    // ── Scan for personal data in every layer of the response ────────────────
+    const LEAK_PATTERNS: Array<{ label: string; pattern: RegExp; severity: string }> = [
+      { label: 'customer email address',             pattern: /\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b/i,              severity: 'critical' },
+      { label: 'South African phone number',         pattern: /\b(?:\+27|0)[6-8]\d[\s-]?\d{3}[\s-]?\d{4}\b/,             severity: 'critical' },
+      { label: 'delivery street address',            pattern: /\b\d+\s+\w+\s+(?:street|road|ave|drive|rd|lane|close)\b/i, severity: 'high'     },
+      { label: 'firstName/lastName in JSON response', pattern: /"(?:first|last)Name"\s*:\s*"[A-Za-z]{2,}"/i,              severity: 'high'     },
+    ];
+
+    let dataLeakFound = false;
+    for (const { label, pattern, severity } of LEAK_PATTERNS) {
+      if (pattern.test(allContent)) {
+        dataLeakFound = true;
+        console.error(
+          `[FINDING][${severity}] order-id-enumeration: tracking response exposes "${label}" for probe ID "${probeId}". ` +
+            'The tracking endpoint must return a generic not-found response for unknown IDs without leaking any ' +
+            'customer data. Verify Firestore security rules on the orders collection and any server-side lookup function.',
+        );
+      }
+    }
+
+    if (!dataLeakFound) {
+      const GRACEFUL_SIGNALS = ['not found', 'no order', 'could not find', 'invalid', 'does not exist', 'no results'];
+      const hasGraceful      = GRACEFUL_SIGNALS.some(s => bodyText.includes(s));
+
+      if (hasGraceful) {
+        console.log(
+          `[INFO] order-id-enumeration: tracking page shows graceful not-found for probe ID "${probeId}" — no data leakage ✓`,
+        );
+      } else if (!LIVE_MODE) {
+        if (trackingRequests.length > 0) {
+          console.log(
+            `[INFO] order-id-enumeration: safe mode — ${trackingRequests.length} Firestore/CF request(s) intercepted from tracking page. ` +
+              `No customer data in DOM for probe ID "${probeId}" ✓`,
+          );
+        } else {
+          console.warn(
+            '[INFO] order-id-enumeration: safe mode — no Firestore or CF request observed from /track.html. ' +
+              'The page may not query the backend when the ID is supplied via URL parameter, or uses a different pattern.',
+          );
+        }
+      } else {
+        console.warn(
+          `[FINDING][low] order-id-enumeration: LIVE_MODE — tracking page shows no clear "not found" message for probe ID "${probeId}". ` +
+            'Guests should receive explicit feedback when an order ID is not recognised.',
+        );
+      }
+    }
+
+    if (LIVE_MODE && cfResponseBodies.length > 0) {
+      console.log(`[INFO] order-id-enumeration: ${cfResponseBodies.length} CF/Firestore response(s) received for probe ID.`);
+    }
+
+    if (pageErrors.length > 0) {
+      console.warn(
+        `[FINDING][medium] order-id-enumeration: ${pageErrors.length} JS exception(s) on tracking page with probe ID "${probeId}": ${pageErrors.join(' | ')}`,
+      );
+    }
+
+    expect(dataLeakFound, 'Order tracking must not return customer data for a non-existent order ID').toBe(false);
+    expect(pageErrors,    'No unhandled JS exceptions must occur on the tracking page with an unknown order ID').toHaveLength(0);
   });
 
 });
