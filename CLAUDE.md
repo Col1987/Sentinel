@@ -41,6 +41,20 @@ sentinel/
 
 ## Conventions
 
+### Debugging circuit breaker
+
+If a single test has required more than 2 consecutive live-debugging fixes in one session (patch → run → still broken → patch again) without reaching a clean pass, STOP immediately. Do not attempt a third patch. Instead:
+
+1. Revert the file(s) to the last known-good commit: `git checkout HEAD~1 -- <file>`
+2. State clearly that the debugging attempt is being abandoned for this session, and why.
+3. Do NOT re-run the test again in this session. Wait for explicit instruction to resume.
+
+This rule exists because repeated live-patching under pressure has previously caused runaway token/session consumption chasing hangs one at a time, each fix plausible in isolation but the cumulative cost unacceptable. Two attempts is the limit. A third attempt is never worth it in the moment — reverting and rewriting fresh in the next session is always cheaper than continuing to chase a hang live.
+
+This rule overrides any instruction to "keep trying" or "just one more fix" given in the heat of a debugging session. If the person insists on continuing past 2 failed attempts, state this rule explicitly back to them before proceeding, so the decision to continue is made knowingly, not by momentum.
+
+Additionally: any test expected to take longer than 60 seconds must have that duration explicitly justified in a code comment before it is built, not discovered afterward. If a test's actual runtime exceeds its stated justification by more than 2×, that is itself a signal to stop and investigate before adding more timeout budget.
+
 ### Code
 - Page Object Model for all page interactions. Every page gets a class in `src/pages/`
 - No hardcoded URLs. All target sites configured in `src/config/sites.ts`
