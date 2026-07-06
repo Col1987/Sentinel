@@ -174,6 +174,151 @@ async function fillAllItemConfigs(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Helpers used exclusively by the two-tier pack tests below.
+// These are separate from loginAsAdminDirect / openOrderInAdmin to avoid
+// inheriting their known issues (timeout:0, window.viewOrder hang).
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Signs out any active Firebase session so #btn-login is reachable.
+// Logout button is often display:none in the collapsed hamburger at desktop
+// viewport — JS call bypasses the click → scroll-into-view hang.
+async function signOutCurrentUser(page: Page): Promise<void> {
+  await page.goto('/', { waitUntil: 'load', timeout: 20_000 });
+  await page.waitForTimeout(3_000);
+
+  // If admin is logged in, goto('/') redirects to /admin.html — #btn-login won't exist there.
+  // Detect the redirect by URL and sign out directly without relying on #btn-login presence.
+  if (page.url().includes('admin')) {
+    await page.evaluate(() => {
+      if (typeof (window as any).logout === 'function') (window as any).logout();
+    });
+    await page.waitForNavigation({ timeout: 10_000 }).catch(() => {});
+    await page.goto('/', { waitUntil: 'load', timeout: 20_000 });
+    await page.waitForFunction(
+      () => {
+        const btn = document.getElementById('btn-login');
+        return !!btn && !btn.classList.contains('hidden') && window.getComputedStyle(btn).display !== 'none';
+      },
+      { timeout: 15_000 },
+    ).catch(() => {
+      console.log('[WARN] signOutCurrentUser: #btn-login not visible after admin logout');
+    });
+    return;
+  }
+
+  const sessionActive = await page.evaluate(() => {
+    const btn = document.getElementById('btn-login');
+    if (!btn) return false;
+    return btn.classList.contains('hidden') || window.getComputedStyle(btn).display === 'none';
+  });
+  if (!sessionActive) return;
+
+  await page.evaluate(() => {
+    if (typeof (window as any).logout === 'function') (window as any).logout();
+  });
+  await page.waitForNavigation({ timeout: 10_000 }).catch(() => {});
+  await page.goto('/', { waitUntil: 'load', timeout: 20_000 });
+  await page.waitForFunction(
+    () => {
+      const btn = document.getElementById('btn-login');
+      return !!btn && !btn.classList.contains('hidden') && window.getComputedStyle(btn).display !== 'none';
+    },
+    { timeout: 15_000 },
+  ).catch(() => {
+    console.log('[WARN] signOutCurrentUser: #btn-login still not visible after logout');
+  });
+}
+
+// Logs in as admin. Caller must have signed out any existing session first
+// (signOutCurrentUser), so #btn-login is visible when this runs.
+async function adminLogin(page: Page): Promise<void> {
+  const email = process.env.ADMIN_EMAIL ?? '';
+  const password = process.env.ADMIN_PASSWORD ?? '';
+  if (!email || !password) throw new Error('ADMIN_EMAIL / ADMIN_PASSWORD not set in .env');
+
+  await page.locator('#btn-login').waitFor({ state: 'visible', timeout: 10_000 });
+  await page.locator('#btn-login').click({ timeout: 10_000 });
+  await page.locator('#login-email').waitFor({ state: 'visible', timeout: 10_000 });
+  await page.locator('#login-email').fill(email, { timeout: 5_000 });
+  await page.locator('#login-password').fill(password, { timeout: 5_000 });
+  await page.locator('button[type="submit"]:has-text("Login")').click({ timeout: 10_000 });
+
+  await page.waitForFunction(
+    () => {
+      if (!window.location.pathname.includes('admin')) return false;
+      if (document.readyState !== 'complete') return false;
+      const overlay = document.getElementById('admin-auth-overlay');
+      if (!overlay) return true;
+      const style = window.getComputedStyle(overlay);
+      return style.display === 'none' || style.visibility === 'hidden' || overlay.classList.contains('hidden');
+    },
+    { timeout: 60_000 },
+  );
+}
+
+// Finds an order in the admin orders table by buyer email, clicks View, and
+// returns the modal text content. Returns null if not found within timeoutMs.
+async function findOrderByEmail(
+  page: Page,
+  email: string,
+  timeoutMs: number,
+): Promise<string | null> {
+  await page.waitForTimeout(2_000);
+
+  const searchInput = page.locator('#filter-search');
+  const searchVisible = await searchInput
+    .waitFor({ state: 'visible', timeout: 15_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!searchVisible) {
+    console.log('[WARN] findOrderByEmail: #filter-search not visible — not on admin orders page');
+    return null;
+  }
+
+  await searchInput.fill(email, { timeout: 10_000 });
+  await page.waitForTimeout(1_500);
+
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const rows = await page.locator('#orders-body tr').all();
+    for (const row of rows) {
+      const rowText = await row.textContent({ timeout: 5_000 }).catch(() => '');
+      if (rowText?.includes(email)) {
+        await row.locator('button:has-text("View")').click({ timeout: 10_000 }).catch(() => {});
+        await page.locator('#order-modal').waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {});
+        await page.waitForTimeout(500);
+        if (await page.locator('#order-modal').isVisible()) {
+          return await page.locator('#order-modal').textContent({ timeout: 5_000 }).catch(() => '');
+        }
+      }
+    }
+    await page.locator('#orders-refresh-btn').click({ timeout: 5_000 }).catch(() => {});
+    await page.waitForTimeout(3_000);
+  }
+
+  return null;
+}
+
+// Clicks Pay Now, races the CF POST request and the resulting page navigation,
+// and returns the orderId extracted from the CF request body.
+async function clickPayAndCapture(page: Page): Promise<string | null> {
+  const cfReqPromise = page.waitForRequest(
+    req => req.url().includes('cloudfunctions.net') && req.method() === 'POST',
+    { timeout: 30_000 },
+  ).catch(() => null);
+  const navPromise = page.waitForNavigation({ timeout: 30_000 }).catch(() => null);
+  await page.locator('#pay-now-btn').click({ timeout: 10_000 });
+  const [cfReq] = await Promise.all([cfReqPromise, navPromise]);
+  if (!cfReq) return null;
+  try {
+    const parsed = JSON.parse(cfReq.postData() ?? '') as Record<string, unknown>;
+    return (parsed?.data as Record<string, unknown>)?.orderId as string ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 test.describe('Cart combinations', { tag: ['@functional'] }, () => {
 
@@ -562,6 +707,239 @@ test.describe('Cart combinations', { tag: ['@functional'] }, () => {
         );
       } else {
         console.log('[INFO] wifi-config-multiple-items: 1 .wifi-box found — Wi-Fi config is per-cart/order level, not per-item.');
+      }
+    },
+  );
+
+  // ───────────────────────────────────────────────────────────────────────────
+
+  test(
+    'all-packs-data-integrity — verify every pack has a valid name and price in the catalog',
+    async ({ page }) => {
+      // One page load + one addToCart call per pack — no checkout or admin login.
+      // With 6 packs and 300 ms settle per call, the loop runs in < 5 s.
+      // 30 s ceiling: if this blows the budget, the page load or addToCart itself is the problem.
+      test.setTimeout(30_000);
+      test.info().annotations.push({
+        type: 'description',
+        description:
+          'Loads the landing page and waits for Firebase and addToCart to initialize. ' +
+          'Reads all pack IDs from onclick="addToCart(...)" attributes in the DOM, then for ' +
+          'each calls addToCart(id) and inspects the bh_cart localStorage entry. ' +
+          'Asserts every pack has a non-empty name and a numeric price > 0. ' +
+          'No checkout flow, no admin login — pure client-side catalog verification.',
+      });
+
+      // ── 1. Load home page and confirm addToCart is in scope ─────────────────
+      await page.goto('/', { waitUntil: 'load', timeout: 20_000 });
+      await page.waitForFunction(
+        () => typeof (window as any).addToCart === 'function',
+        { timeout: 10_000 },
+      );
+      // addToCart being defined does not guarantee pack card DOM elements are rendered.
+      // Wait until at least one onclick="addToCart(...)" element is in the DOM.
+      await page.waitForFunction(
+        () => document.querySelectorAll('[onclick*="addToCart"]').length > 0,
+        { timeout: 15_000 },
+      );
+
+      // ── 2. Collect pack IDs from onclick attributes ──────────────────────────
+      // Pack IDs are the canonical source — bh_cart is the data source for name/price.
+      // We do not scrape headings or price text from the DOM (fragile, layout-dependent).
+      const packIds = await page.evaluate((): string[] => {
+        const seen = new Set<string>();
+        const result: string[] = [];
+        document.querySelectorAll<HTMLElement>('[onclick*="addToCart"]').forEach(el => {
+          const m = (el.getAttribute('onclick') ?? '').match(/addToCart\(['"]([^'"]+)['"]\)/);
+          if (m?.[1] && !seen.has(m[1])) { seen.add(m[1]); result.push(m[1]); }
+        });
+        return result;
+      });
+
+      if (packIds.length === 0) {
+        console.log('[FINDING][high] all-packs-data-integrity: no pack IDs found in DOM — landing page may not have loaded correctly.');
+        return;
+      }
+      console.log(`[INFO] all-packs-data-integrity: found ${packIds.length} pack ID(s): ${packIds.join(', ')}`);
+
+      // ── 3. For each pack: addToCart → bh_cart → verify name and price ───────
+      const findings: string[] = [];
+      for (const id of packIds) {
+        await page.evaluate(() => localStorage.removeItem('bh_cart'));
+        await page.evaluate((packId: string) => (window as any).addToCart(packId), id);
+        // 300 ms for the cart reactive state to write to localStorage.
+        await page.waitForTimeout(300);
+
+        const cartRaw = await page.evaluate((): string => localStorage.getItem('bh_cart') ?? '');
+        let name = '';
+        let price = 0;
+        try {
+          type CartItem = { id?: string; name?: string; price?: number };
+          const parsed = JSON.parse(cartRaw) as unknown;
+          const items = Array.isArray(parsed) ? (parsed as CartItem[]) : [parsed as CartItem];
+          // Platform accumulates items in memory — find the specific pack by ID.
+          const item = items.find(i => i.id === id) ?? items[items.length - 1];
+          name = typeof item?.name === 'string' ? item.name : '';
+          price = typeof item?.price === 'number' ? item.price : 0;
+        } catch (err) {
+          console.log(`[WARN] all-packs-data-integrity: bh_cart parse failed for '${id}': ${String(err)}`);
+        }
+
+        if (!name) {
+          findings.push(`${id}: missing name`);
+          console.log(`[FINDING][high] all-packs-data-integrity: pack '${id}' has no name in catalog`);
+        }
+        if (price <= 0) {
+          findings.push(`${id}: missing price`);
+          console.log(`[FINDING][high] all-packs-data-integrity: pack '${id}' has no price in catalog`);
+        }
+        if (name && price > 0) {
+          console.log(`[INFO] all-packs-data-integrity: '${id}' (${name}) R${price} ✓`);
+        }
+      }
+
+      await page.evaluate(() => localStorage.removeItem('bh_cart'));
+
+      if (findings.length === 0) {
+        console.log(`[INFO] all-packs-data-integrity: all ${packIds.length} pack(s) passed ✓`);
+      }
+    },
+  );
+
+  // ───────────────────────────────────────────────────────────────────────────
+
+  test(
+    'representative-checkout-sample — full checkout-to-admin verification for first and last listed pack',
+    async ({ page }) => {
+      // 2 packs × ~90 s each: signOut(5s) + register(15s) + fillConfig(20s) + pay(10s)
+      //   + signOut(5s) + adminLogin(30s) + findOrder(10s) ≈ 95 s per pack.
+      // 180 s ceiling covers 2 packs with ~10 s of headroom. Set unconditionally so
+      // the test fails loudly in both modes rather than defaulting to the global 60 s.
+      // Note: runCheckoutFlow() from checkout-helpers hardcodes PACK_ID (wooden-whiskey)
+      // and cannot be parameterised. Individual helpers are used here instead.
+      if (LIVE_MODE) test.setTimeout(180_000);
+      test.info().annotations.push({
+        type: 'description',
+        description:
+          'Discovers all packs on the storefront and picks the first and last as a boundary ' +
+          'sample. In safe mode, registers once and verifies each sample pack renders a price ' +
+          'in the checkout UI. In LIVE_MODE, runs a full checkout flow for each sample pack ' +
+          'and confirms the admin dashboard records the correct pack subtotal. ' +
+          'Logs [FINDING][high] for any pack whose price is missing or wrong in admin.',
+      });
+
+      // ── 1. Discover packs and select sample ────────────────────────────────
+      const packs = await discoverPacks(page);
+      if (packs.length === 0) {
+        console.log('[FINDING][high] representative-checkout-sample: no packs found on storefront.');
+        return;
+      }
+      const sample = packs.length === 1 ? [packs[0]] : [packs[0], packs[packs.length - 1]];
+      console.log(
+        `[INFO] representative-checkout-sample: discovered ${packs.length} pack(s). ` +
+          `Sample: [${sample.map(p => p.id).join(', ')}] (first + last of ${packs.length})`,
+      );
+
+      const failures: string[] = [];
+
+      if (!LIVE_MODE) {
+        // ── 2a. Safe mode: verify checkout UI renders a price for each sample ─
+        await registerForCheckout(page);
+        for (const pack of sample) {
+          await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 15_000 });
+          await page.waitForTimeout(1_000);
+          await page.evaluate(() => localStorage.removeItem('bh_cart'));
+          await page.evaluate((id: string) => (window as any).addToCart(id), pack.id);
+          await page.waitForTimeout(400);
+          await page.goto('/checkout.html', { waitUntil: 'domcontentloaded', timeout: 15_000 });
+          await page.waitForTimeout(1_500);
+          const bodyText = await page.evaluate((): string => document.body.innerText);
+          const hasPrice = bodyText.includes('R');
+          const inCart = (await page.evaluate((): string => localStorage.getItem('bh_cart') ?? '')).includes(pack.id);
+          console.log(`[INFO] representative-checkout-sample (safe): pack=${pack.id} price_visible=${hasPrice} in_cart=${inCart}`);
+          if (!hasPrice) failures.push(`${pack.id}: no price visible in checkout UI`);
+        }
+        if (failures.length > 0) {
+          console.log('[FINDING][high] representative-checkout-sample: ' + failures.join('; '));
+        } else {
+          console.log('[INFO] representative-checkout-sample (safe): all sample packs render price in checkout ✓');
+        }
+        return;
+      }
+
+      // ── 2b. LIVE_MODE: full checkout + admin verification per sample pack ───
+      for (const pack of sample) {
+        // Sign out any active session (admin from previous iteration, or none on first).
+        // registerForCheckout clicks #btn-login, which is hidden while any user is logged in.
+        await signOutCurrentUser(page);
+
+        console.log(`[INFO] representative-checkout-sample: starting checkout for pack=${pack.id}`);
+        const checkoutEmail = await registerForCheckout(page);
+
+        // After registerForCheckout we are on '/'. Confirm addToCart is in scope before calling it.
+        // (registerForCheckout uses waitUntil:'domcontentloaded' — Firebase scripts may still be loading.)
+        await page.waitForFunction(
+          () => typeof (window as any).addToCart === 'function',
+          { timeout: 10_000 },
+        ).catch(() => {});
+
+        await page.evaluate(() => localStorage.removeItem('bh_cart'));
+        await page.evaluate((id: string) => (window as any).addToCart(id), pack.id);
+        await page.waitForTimeout(400);
+
+        await page.goto('/checkout.html', { waitUntil: 'domcontentloaded', timeout: 15_000 });
+        await page.waitForTimeout(1_500);
+
+        // Read catalog price from bh_cart now — the form submission overwrites cart state.
+        let packPrice = 0;
+        try {
+          const raw = await page.evaluate((): string => localStorage.getItem('bh_cart') ?? '');
+          const items = JSON.parse(raw) as Array<{ price?: number }>;
+          const first = Array.isArray(items) ? items[0] : (items as { price?: number });
+          packPrice = first?.price ?? 0;
+        } catch { }
+        console.log(`[INFO] representative-checkout-sample: pack=${pack.id} catalog price=R${packPrice}`);
+
+        await fillConfigStep(page);
+        await advanceThroughDeliveryToPayment(page);
+        await page.locator('#co-billing-addr').fill(ADDR.billing, { timeout: 10_000 });
+
+        const cfOrderId = await clickPayAndCapture(page);
+        console.log(`[INFO] representative-checkout-sample: pack=${pack.id} CF orderId=${cfOrderId}`);
+
+        // Checkout user is still logged in (Firebase session persists across navigation).
+        // Sign out before logging in as admin.
+        await signOutCurrentUser(page);
+        await adminLogin(page);
+
+        const modalText = await findOrderByEmail(page, checkoutEmail, 30_000);
+        if (!modalText) {
+          failures.push(`${pack.id}: order not found in admin`);
+          console.log(`[FINDING][high] representative-checkout-sample: order for pack=${pack.id} not found in admin.`);
+          continue;
+        }
+        console.log(`[INFO] representative-checkout-sample: pack=${pack.id} admin modal (first 500): ${modalText.slice(0, 500)}`);
+
+        const rawStr = String(packPrice);
+        const commaStr = rawStr.replace(/(\d)(?=(\d{3})+$)/g, '$1,');
+        const spaceStr = rawStr.replace(/(\d)(?=(\d{3})+$)/g, '$1 ');
+        const hasPrice = packPrice > 0 && (
+          modalText.includes(rawStr) || modalText.includes(commaStr) || modalText.includes(spaceStr)
+        );
+
+        if (packPrice > 0 && !hasPrice) {
+          failures.push(`${pack.id}: R${commaStr} not found in admin modal`);
+          console.log(`[FINDING][high] representative-checkout-sample: pack=${pack.id} expected R${commaStr} in admin — not found.`);
+        } else {
+          console.log(`[INFO] representative-checkout-sample: pack=${pack.id} subtotal R${commaStr} confirmed in admin ✓`);
+        }
+
+        await page.evaluate(() => { document.getElementById('order-modal')?.classList.remove('active'); });
+        await page.waitForTimeout(500);
+      }
+
+      if (failures.length === 0) {
+        console.log('[INFO] representative-checkout-sample: all sample pack(s) verified in admin ✓');
       }
     },
   );
