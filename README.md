@@ -33,17 +33,21 @@ sentinel/
 
 ## Current test coverage
 
-147 tests across 5 projects, running in under 2 minutes.
+150+ tests across 5 projects in safe mode, plus a growing suite of LIVE_MODE end-to-end tests that exercise real backends (Firebase Auth, Cloud Functions, PayFast sandbox, Gmail) with explicit owner permission.
 
-**Smoke (11 tests):** Homepage returns 200, no console errors, page title present. All 7 known pages respond without a server error (checked in parallel via HTTP, completes in under 500ms). Navigation bar visible with at least one link. Primary CTA button ("Get Started" or "Book a Demo") present. Footer rendered. CSS stylesheets loaded with non-default computed styling applied. Firebase SDK initialised. All homepage images load without broken-image errors. Page load time measured and flagged if over 5 s (medium) or 10 s (high).
+**Smoke (11 tests):** Page availability across all known routes, critical UI elements present, CSS/JS loaded correctly, no broken images, homepage load time threshold.
 
-**Functional (63 tests):** Demo booking form (10 scenarios including validation, XSS, boundary inputs, double-submit), registration form (8 scenarios including password mismatch, phone validation, terms enforcement), login form (6 scenarios), forgot password (4 scenarios), navigation and anchor scrolling (5 tests), modal open/close and cross-modal navigation (9 tests), responsive/mobile (7 tests across three viewport groups — 375px mobile, 768px tablet boundary, and explicit 375px/1280px horizontal overflow checks), storefront cart behaviour (9 tests including multi-item accumulation, cross-page persistence, and badge-to-drawer count consistency), demo modal lifecycle (2 tests), auth flows including logout (3 tests), order tracking deeplinks (2 tests).
+**Functional (60+ tests):** Demo booking form, registration form (including international phone number formats), login form, forgot password, navigation and anchor scrolling, modal open/close and cross-modal navigation, responsive/mobile including tablet boundary and horizontal overflow checks, storefront cart behaviour, demo modal lifecycle, auth flows including logout and session persistence, order tracking deeplinks, Watch Demo button content check.
 
-**Security (37 tests):** Auth bypass and direct page access (3 tests), cart manipulation and empty checkout (3 tests), console injection and DOM bypass (3 tests), credential exposure scanning for PayFast keys, TCG API keys, MD5 libraries, and deprecated project references (5 tests), CSP header validation (1 test), checkout abuse including XSS, empty submit, and price-in-DOM scanning (5 tests), welcome page XSS, collection address leak, QR data leak (5 tests), order tracking XSS, SQL injection, sensitive data scanning, cross-user access probing (6 tests), public page console error sweep across all known pages (1 test), security response headers (HSTS, X-Content-Type-Options, X-Frame-Options/CSP frame-ancestors, Referrer-Policy, Permissions-Policy) and cookie security flags (Secure, HttpOnly, SameSite) (2 tests).
+**Security (37+ tests):** Auth bypass, cart manipulation, console injection and DOM bypass, credential exposure scanning, security headers (HSTS, CSP, X-Frame-Options), checkout abuse including price/quantity manipulation via DevTools, welcome page XSS and data leak checks, order tracking XSS/SQL injection/enumeration, public page console error sweep.
 
-**Audit (5 tests):** Accessibility via axe-core (WCAG AA) across all 6 known public pages (homepage, account, checkout, order tracking, welcome, terms) with findings grouped by page, SEO audit across all 6 pages checking title length, meta description, h1 count, heading hierarchy, Open Graph tags, canonical URL, lang attribute, and image alt attributes, code quality audit (AI patterns) across all 6 pages with 11 checks targeting AI-generated code failures: duplicate IDs, orphaned event handlers, dead forms, phantom assets, low-quality aria, duplicate meta tags, hardcoded localhost, empty href links, console.log in production, mixed content, and hardcoded test data, broken link verification with browser fallback, interactive element discovery with selector mapping.
+**Audit (4 tests):** Accessibility via axe-core across all known pages, broken link verification with browser fallback, interactive element discovery, SEO auditor (titles, meta descriptions, heading hierarchy, Open Graph, canonicals, alt text), and an 11-check code quality auditor purpose-built to catch AI-generated code failure patterns (duplicate IDs, orphaned event handlers, dead forms, phantom asset references, low-quality aria labels, duplicate meta tags, hardcoded localhost URLs, placeholder href links, excessive console.log, mixed content, hardcoded test data).
 
-**Admin (32 tests):** Dashboard stats and tab navigation (2 tests), order management structure and detail view (2 tests), pack CRUD flows with create, edit, and delete confirmation (4 tests), user management list and detail (3 tests), order flows with filtering, search, and CSV export (5 tests), negative access control with DOM bypass, unauthenticated tab forcing, and session expiry (3 tests), negative order abuse with XSS, SQL injection, and unauthenticated export (4 tests), negative pack abuse with empty/negative/zero price and XSS (5 tests), negative user abuse with credential scanning and role escalation probing (2 tests), access control and auth gate verification (2 tests).
+**Admin (32+ tests):** Dashboard, order management, pack CRUD, user management, negative access control (DOM bypass, session expiry, unauthenticated export), negative order/pack/user abuse (XSS, SQL injection, role escalation probing).
+
+**LIVE_MODE end-to-end (new):** Full checkout through real PayFast sandbox with order creation confirmed in admin. Order lifecycle testing — status progression through all 6 stages (Pending → Assembling → Ready for Collection → In Transit → Delivered → Completed) with persistence verification, waybill entry and save. Welcome page rendering verified against real guest/property data from a real order. Full admin pack CRUD lifecycle (create → verify on storefront → edit → delete) against the real database. Login lockout and session persistence testing, including Firebase's brute-force protection and the Remember Me persistence mechanism. Automated email verification testing via Gmail API — Sentinel reads the real inbox, extracts the real verification link, and follows it, with zero manual intervention. Price and quantity manipulation testing (confirmed server-side price lookup, no client-supplied price accepted). Order ID enumeration testing against real order IDs. Multi-property and international phone number registration testing.
+
+Every LIVE_MODE test is written mode-agnostic by default: it asserts what it can prove from the intercepted request in safe mode, and layers additional server-side verification when running against the real backend. `test.skip(!LIVE_MODE)` is reserved only for tests that are structurally impossible to verify without a real backend (e.g. race-condition/idempotency checks).
 
 ## Key findings on juelhaus.co.za
 
@@ -59,36 +63,40 @@ sentinel/
 - Auth modal does not close on Escape key. Keyboard users cannot dismiss it.
 - Mobile hamburger menu z-index blocks its own close button.
 
-**SEO:**
-- Homepage title is 74 characters, exceeding the 60-character SERP display limit. Current value: "Juel Haus | Guest Experience Platform for Airbnb & Short-Term Rental Hosts".
-- Canonical URL (`<link rel="canonical">`) missing on all 6 pages. Without it, search engines may index multiple URL variants and split link equity.
-- No `<h1>` heading on account, checkout, or welcome pages. Search engines use the h1 as the primary topical signal for each page.
-- Meta description on account and checkout pages is 188 characters, exceeding the 160-character limit. Google will truncate or auto-generate a replacement snippet.
-- Open Graph tags (og:title, og:description, og:image) missing on account, tracking, welcome, and terms pages. Shared links on social platforms will render without a preview.
-- Heading hierarchy skips a level on the terms page (h1 → h3 with no h2). Breaks document outline for both search engines and screen reader navigation.
-- 17 findings across 6 pages. Homepage and terms each show 2 findings; account shows 4.
-
-**Code Quality:**
-- `account.html` — `onclick="resendVerificationEmail()"` on `#resend-verify-btn` references a function that does not exist on `window`. Clicking the button silently fails with a ReferenceError. Consistent with AI-generated code where a handler is declared in an attribute but never implemented.
-- Homepage `form#demo-form` has no `action` attribute and no `onsubmit` handler. The form relies on a dynamically attached `addEventListener` that the static DOM cannot confirm. The submission path is invisible to static analysis.
-- Homepage — `<a href="#">` with visible text "log in again" is a placeholder link: clicking it scrolls to the top of the page rather than opening the login modal. Users who are signed out and click the prompt receive no feedback.
-- No localhost URLs, mixed content, Lorem ipsum, duplicate meta tags, or excessive console.log detected across any of the 6 audited pages.
-
 **Functional:**
 - Cart total display does not reset after removing the last item. Badge shows 0 but price stays at R1,200.
 - No confirmation prompt before pack deletion in admin portal.
+
+**Functional:**
+- Cart total display does not reset after removing the last item. Badge shows 0 but price stays.
+- No confirmation prompt before pack deletion in admin portal.
+- Welcome page does not display which pack the guest ordered.
+- Storefront serves a cached version of pack data after an admin edit — changes don't reflect immediately.
+- Failed login lockout (Firebase's brute-force protection) shows no message to the user. The form silently stops accepting the correct password with no explanation.
+
+**Email and domain branding:**
+- Email verification links redirect to `juelhaus-co-za.firebaseapp.com` instead of the custom domain, which can trigger a "this site may be fake" warning in Chrome for new users completing signup.
+- Order tracking links in confirmation emails point to the raw Firebase Hosting domain (`.web.app`) rather than the branded domain, and omit the order ID as a deep-link parameter — forcing customers to manually enter their order number despite the tracking page supporting deep links elsewhere.
+- The order confirmation email is triggered by an admin manually advancing the order to "Assembling" status, not by PayFast payment confirmation.
+- The "resend verification email" button works correctly on the homepage but has no JS handler at all on the account page, and the underlying Cloud Function returns an HTTP 500 error server-side.
 
 **Positive confirmations:**
 - No PayFast credentials, TCG API keys, or MD5 libraries in client-side JavaScript.
 - No deprecated project references (baylinhaus-c9d41) anywhere in the codebase.
 - Firestore security rules hold under DOM bypass. Removing the auth overlay exposes no real data.
-- Zero console errors across all 6 known pages.
+- Zero console errors across all known pages.
 - XSS blocked on every tested input across public site and admin portal.
 - SQL injection payloads handled gracefully on order tracking and admin search.
 - Double-submit protection on demo form confirmed.
-- Custom phone validation on registration form (not just browser `type="tel"`).
+- Custom phone validation on registration form, and international phone number formats (UK, US, UAE, Germany) all validate correctly.
 - Empty cart checkout blocked both via UI and direct `goToCheckout()` console call.
 - CSV export blocked for unauthenticated visitors.
+- Price and quantity are never sent by the client at checkout — the server performs its own lookup from the order/pack reference. Confirmed by intercepting the Cloud Function payload and by checking the admin order record after a manipulated client-side price was submitted.
+- No order data leakage when guessing/incrementing a real order ID by one character.
+- No cart data loss between concurrent sessions on the same account.
+- Full admin pack CRUD lifecycle (create, edit, delete) persists correctly to the database and reflects on the public storefront.
+- The order lifecycle correctly progresses through all six statuses with each transition persisting, and waybill entry saves correctly.
+- Remember Me correctly switches Firebase between LOCAL (persists across browser restarts) and SESSION persistence.
 
 ## How it works
 
@@ -97,9 +105,14 @@ sentinel/
 Each auditor module in `src/auditors/` implements the `AuditResult` interface from `src/auditors/types.ts`. Auditors scan pages for specific issue categories and return structured findings with severity levels.
 
 - **Links auditor:** Collects every `<a href>` on the page, checks each with an HTTP HEAD request, and falls back to full browser navigation for pages that require JavaScript to render. Eliminates false positives from client-rendered pages.
-- **Accessibility auditor:** Runs axe-core via `@axe-core/playwright` against configured pages. Maps axe impact levels to the Sentinel severity enum.
+- **Accessibility auditor:** Runs axe-core via `@axe-core/playwright` against every known page. Maps axe impact levels to the Sentinel severity enum.
 - **Discovery auditor:** Navigates to each configured page and maps every interactive element (forms, inputs, buttons, links, selects, textareas). Extracts the most reliable selector for each element and outputs a JSON map to `reports/discovery.json`. Also flags elements with no accessible name.
-- **Code quality auditor:** Targets eleven failure patterns that appear disproportionately in AI-generated code. Checks run inside `page.evaluate()` without a full AST parse: duplicate element IDs (browser CSS and JS lookups silently return only the first), orphaned event handler attributes referencing functions that do not exist on `window` (silent broken interactions), forms with no detectable submission path, asset references that return HTTP 4xx (CSS or JS files referenced but never deployed), aria-label values that are too short or use generic placeholder text, duplicate `<title>` or `<meta>` tags, hardcoded localhost or 127.0.0.1 URLs, placeholder `<a href="#">` links, more than five `console.log` calls in inline scripts, HTTP resources loaded on an HTTPS page, and placeholder text in visible page content (Lorem ipsum, test@test.com, TODO, FIXME). The auditor targets AI tools specifically because they generate structurally valid HTML that passes visual inspection but contains these systematic gaps.
+- **SEO auditor:** Checks page titles, meta descriptions, heading hierarchy, Open Graph tags, canonical URLs, lang attributes, and image alt text across every known page.
+- **Code quality auditor:** Purpose-built to catch failure patterns specific to AI-generated frontends — duplicate element IDs, event handlers referencing undefined functions, forms with no submission mechanism, 404s on asset references, low-quality aria labels, duplicate meta tags, hardcoded localhost URLs, placeholder href links, excessive console.log calls, mixed HTTP content on HTTPS pages, and hardcoded placeholder text (Lorem ipsum, test@test.com, TODO/FIXME).
+
+### Gmail integration for email verification testing
+
+`src/utils/gmail.ts` connects to a dedicated Gmail inbox via the Gmail API (OAuth2, read-only scope) to fully automate email verification testing. After a test registers an account, Sentinel polls the real inbox, extracts the real verification or order-confirmation link from the email body, and navigates to it — proving the entire email round-trip works with zero manual intervention. This is how the Firebase Hosting domain redirect issue (above) was discovered: a fully automated test caught something a manual click-through would only find by accident.
 
 ### Journey runner
 
@@ -188,16 +201,21 @@ Key design decisions:
 - No independent timeouts in shared helpers or journey steps. Helpers like `loginAsAdmin` and the journey runner inherit the calling test's timeout budget. A helper that sets its own timeout creates a hidden failure ceiling that contradicts `test.slow()` and produces misleading error messages.
 - Shared utilities (`src/utils/`, `src/runners/`) are reviewed with the same reliability standards as test files. A flaky helper breaks every test that uses it.
 - The framework must work against any website. Site-specific assumptions are never hardcoded into core modules.
+- **Mode-agnostic test design.** Every test is written to work in both safe mode and LIVE_MODE by default, asserting whatever it can prove in the active mode rather than being written exclusively for one. In safe mode, tests intercept the outgoing request and assert on what the client sends. In LIVE_MODE, they additionally verify what the server actually did. `test.skip(!LIVE_MODE)` is reserved only for tests that are structurally impossible to verify without a real backend (e.g. idempotency/race-condition checks).
+- **Test cost awareness.** Before repeating an expensive operation (a full checkout flow, a full registration) across multiple variations, prefer cheap direct data verification over repeating the expensive flow when only the data differs, not the mechanism. When the full flow must be repeated, a representative sample is usually sufficient over exhaustive repetition. Parallel execution is a deliberate choice weighed against resource/rate-limit risk, not a default speed fix.
+- **Debugging circuit breaker.** If a single test requires more than 2 consecutive live-debugging patches in one session without reaching a clean pass, the file is reverted to its last known-good commit and rewritten fresh in a later session, rather than continuing to chase the failure live. Repeated live-patching under pressure is a proven way to burn significant time chasing a hang one symptom at a time.
 
 ## Roadmap
 
 **Phase 1: Safe-mode framework and reporting (complete)**
 
-Built the full test engine, 147 tests across smoke, functional, security, audit, and admin projects. All tests run in safe mode with outbound requests intercepted. Unified HTML reporter generates client-ready reports with findings, severity metrics, and fix guidance. CI pipeline runs on push and daily cron. Site discovery auto-maps interactive elements. Reliability audit eliminated all flaky waits and independent timeouts.
+Built the full test engine, 130 tests across smoke, functional, security, audit, and admin projects. All tests run in safe mode with outbound requests intercepted. Unified HTML reporter generates client-ready reports with findings, severity metrics, and fix guidance. CI pipeline runs on push and daily cron. Site discovery auto-maps interactive elements. Reliability audit eliminated all flaky waits and independent timeouts.
 
-**Phase 2: Live-mode execution**
+**Phase 2: Live-mode execution (in progress)**
 
-Flip `SENTINEL_LIVE_MODE=true` and run the full suite against real backends with the site owner's permission. This verifies server-side validation, end-to-end checkout flows, email delivery, real order tracking, and authenticated user journeys that safe mode cannot fully test. Requires a test user account and a PayFast sandbox environment for payment flow verification.
+Full checkout through real PayFast sandbox, order lifecycle status progression, waybill persistence, welcome page rendering against real guest data, full admin pack CRUD lifecycle, login lockout and session persistence, and automated email verification via Gmail API are all confirmed working end-to-end against the real backend. Ongoing: broader business-scenario testing — multiple properties and international phone formats (done), multi-pack cart combinations, price/quantity manipulation and order enumeration abuse testing (done), cross-customer data boundary checks.
+
+A second, separate Test Case Report (distinct from the Findings Report) is planned — deterministic, test-management-tool style with Test ID / Scenario / Steps / Expected / Actual / Status / Remediation columns, better suited to documenting business-scenario verification than the findings-and-severity format.
 
 **Phase 3: Self-service portal**
 
