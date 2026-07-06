@@ -74,8 +74,14 @@ export async function fillConfigStep(
 ): Promise<void> {
   await page.locator('#cfg-property').fill(ADDR.property);
   await page.locator('#cfg-address').fill(`${ADDR.unit} ${ADDR.street}, ${ADDR.suburb}, ${ADDR.city}`);
-  await page.locator('#addr-breakdown-btn').click();
-  await page.locator('#cfg-addr-street').waitFor({ state: 'visible', timeout: 6_000 });
+  // The breakdown button toggles the panel — only click if it's not already open.
+  // When fillConfigStep is called for a second cart item the breakdown may still be
+  // open from the previous item's form; clicking again would close it.
+  const streetAlreadyVisible = await page.locator('#cfg-addr-street').isVisible({ timeout: 500 }).catch(() => false);
+  if (!streetAlreadyVisible) {
+    await page.locator('#addr-breakdown-btn').click();
+    await page.locator('#cfg-addr-street').waitFor({ state: 'visible', timeout: 6_000 });
+  }
   await page.locator('#cfg-addr-unit').fill(ADDR.unit);
   await page.locator('#cfg-addr-street').fill(ADDR.street);
   await page.locator('#cfg-addr-suburb').fill(ADDR.suburb);

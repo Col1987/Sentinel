@@ -104,6 +104,24 @@ Reserve `test.skip(!LIVE_MODE, 'reason')` ONLY for tests that are structurally i
 
 When a test fails, determine whether the failure is caused by the environment (safe mode correctly blocking a mocked request) or a genuine system defect before logging a finding. A safe-mode test that "fails" only because a request was intercepted is not a finding — that is expected mock behavior.
 
+### Test cost awareness
+
+Before writing any test that repeats an expensive operation (full checkout flow, full registration, multi-step form completion) across multiple variations (multiple packs, multiple properties, multiple accounts), stop and ask:
+
+1. Does this variation actually need the FULL expensive flow, or just the DATA to be correct? Prefer cheap direct verification (checking Firestore/admin data, API responses, DOM state) over repeating an expensive UI flow when the flow itself is identical and only the data differs.
+
+2. If the full flow genuinely must be repeated, is a representative sample sufficient (e.g. first + last item, or 2-3 out of N) rather than exhaustively repeating for every single variation?
+
+3. Before defaulting to parallel execution as a speed fix, consider whether parallel load introduces real risk: rate limiting on the target backend, resource exhaustion in CI (which runs on `workers: 1`), or flakiness from shared state/race conditions. Parallel is not automatically "smarter" than sequential — it trades one cost for another and must be a deliberate choice, not a default.
+
+4. Any test with an expected runtime beyond 2-3 minutes should be flagged explicitly to Colin before being built, with the reasoning for why that cost is necessary. Do not silently build long-running tests without surfacing the tradeoff first.
+
+5. Never use `.catch(() => {})` to silently swallow a failure inside a loop or retry mechanism without logging what was caught. Silent failure swallowing has previously caused a test to retry a broken action for 10 minutes before the real defect was found. Always log caught errors, even when the test is designed to continue past them.
+
+The goal: maximum real coverage at minimum execution cost, with any necessary tradeoff made visible and deliberate rather than accidental.
+
+General principle: when a fix or test design has an obvious "fast/easy" version and a "correct/considered" version, default to the considered one. Speed and low effort are not the goal — genuine coverage at justified cost is. If a shortcut is taken for time or token budget reasons, say so explicitly rather than presenting it as the best solution.
+
 ### Reporting
 - Reports output to `reports/` as self-contained HTML files
 - Each report includes: timestamp, target URL, pass/fail summary, categorised findings with severity (critical/high/medium/low/info), screenshots where relevant
