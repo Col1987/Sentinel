@@ -73,6 +73,9 @@ Every LIVE_MODE test is written mode-agnostic by default: it asserts what it can
 - Welcome page does not display which pack the guest ordered.
 - Storefront serves a cached version of pack data after an admin edit — changes don't reflect immediately.
 - Failed login lockout (Firebase's brute-force protection) shows no message to the user. The form silently stops accepting the correct password with no explanation.
+- **The platform drops one item when two different packs are added to cart and checked out together.** A cart with two packs produces an order for only one — confirmed via the real admin order total being short by exactly one pack's price plus its share of delivery. This is a revenue-affecting defect: a customer ordering multiple packs in one checkout may be charged for or receive fewer items than they ordered.
+- **Wi-Fi configuration does not reach the welcome page in a multi-item cart.** Wi-Fi is architecturally per-order, not per-item — when Wi-Fi credentials are entered for one item in a two-item cart, the welcome page's Wi-Fi display does not appear for either item. Worth confirming with the site owner whether this is intended (one Wi-Fi config per order) or a gap, but as observed the entered credentials do not surface anywhere on the guest-facing page.
+- The site reuses the same HTML element IDs across multiple cart items in the checkout config forms rather than generating unique IDs per item. Duplicate IDs violate the HTML spec and can cause unpredictable behaviour in form handling and accessibility tooling.
 
 **Email and domain branding:**
 - Email verification links redirect to `juelhaus-co-za.firebaseapp.com` instead of the custom domain, which can trigger a "this site may be fake" warning in Chrome for new users completing signup.
@@ -213,7 +216,9 @@ Built the full test engine, 130 tests across smoke, functional, security, audit,
 
 **Phase 2: Live-mode execution (in progress)**
 
-Full checkout through real PayFast sandbox, order lifecycle status progression, waybill persistence, welcome page rendering against real guest data, full admin pack CRUD lifecycle, login lockout and session persistence, and automated email verification via Gmail API are all confirmed working end-to-end against the real backend. Ongoing: broader business-scenario testing — multiple properties and international phone formats (done), multi-pack cart combinations, price/quantity manipulation and order enumeration abuse testing (done), cross-customer data boundary checks.
+Full checkout through real PayFast sandbox, order lifecycle status progression, waybill persistence, welcome page rendering against real guest data, full admin pack CRUD lifecycle, login lockout and session persistence, and automated email verification via Gmail API are all confirmed working end-to-end against the real backend.
+
+Business-scenario testing across three of four dimensions is complete: customer/property variation (single-property-per-account architecture confirmed, international phone formats validated), cart/product combinations (every pack's data verified, checkout confirmed working for a representative sample, and two significant real findings surfaced — a dropped cart item in multi-pack checkouts, and Wi-Fi configuration not reaching the welcome page in multi-item carts), and abuse/security testing (price and quantity manipulation confirmed impossible, order ID enumeration confirmed safe, no cart data loss across concurrent sessions). Remaining: cross-customer data boundary correctness (does one customer's data ever leak into another's view).
 
 A second, separate Test Case Report (distinct from the Findings Report) is planned — deterministic, test-management-tool style with Test ID / Scenario / Steps / Expected / Actual / Status / Remediation columns, better suited to documenting business-scenario verification than the findings-and-severity format.
 
