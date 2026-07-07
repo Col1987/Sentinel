@@ -52,10 +52,13 @@ export async function addPackAndGoToCheckout(page: Page): Promise<void> {
 }
 
 // Date-picker inputs use a custom widget — set via JS to bypass the UI widget.
+// Uses querySelectorAll + last element so this works for both single-item and
+// multi-item carts, where earlier items' fields remain in the DOM (hidden).
 export async function setDateField(page: Page, id: string, value: string): Promise<void> {
   await page.evaluate(
     ({ id, value }: { id: string; value: string }) => {
-      const el = document.getElementById(id) as HTMLInputElement | null;
+      const els = document.querySelectorAll<HTMLInputElement>(`#${id}`);
+      const el = els[els.length - 1] ?? null;
       if (!el) return;
       el.value = value;
       el.dispatchEvent(new Event('input',  { bubbles: true }));
@@ -72,25 +75,56 @@ export async function fillConfigStep(
   page: Page,
   wifiConfig?: { ssid: string; password: string },
 ): Promise<void> {
-  await page.locator('#cfg-property').fill(ADDR.property);
-  await page.locator('#cfg-address').fill(`${ADDR.unit} ${ADDR.street}, ${ADDR.suburb}, ${ADDR.city}`);
-  // The breakdown button toggles the panel — only click if it's not already open.
-  // When fillConfigStep is called for a second cart item the breakdown may still be
-  // open from the previous item's form; clicking again would close it.
-  const streetAlreadyVisible = await page.locator('#cfg-addr-street').isVisible({ timeout: 500 }).catch(() => false);
+  // Use .last() throughout — when two cart items are present, item 1's form elements
+  // remain in the DOM (hidden) while item 2's form is shown. .last() always targets
+  // the current (most recently added) item's fields regardless of how many items
+  // preceded it. Safe for single-item carts (only one element → last === first).
+  await page.locator('#cfg-property').last().fill(ADDR.property);
+  await page.locator('#cfg-address').last().fill(`${ADDR.unit} ${ADDR.street}, ${ADDR.suburb}, ${ADDR.city}`);
+  // The breakdown button toggles the address panel — only click if it's not already open.
+  // If the panel still doesn't open after click (can happen for item 2+ in multi-item carts
+  // where the toggle may not respond), fall back to setting the addr fields directly via JS,
+  // matching the setDateField pattern used for date inputs.
+  const streetAlreadyVisible = await page.locator('#cfg-addr-street').last().isVisible({ timeout: 500 }).catch(() => false);
+  let addrPanelOpen = streetAlreadyVisible;
   if (!streetAlreadyVisible) {
-    await page.locator('#addr-breakdown-btn').click();
-    await page.locator('#cfg-addr-street').waitFor({ state: 'visible', timeout: 6_000 });
+    await page.locator('#addr-breakdown-btn').last().click();
+    addrPanelOpen = await page.locator('#cfg-addr-street').last()
+      .waitFor({ state: 'visible', timeout: 6_000 })
+      .then(() => true)
+      .catch(() => false);
   }
-  await page.locator('#cfg-addr-unit').fill(ADDR.unit);
-  await page.locator('#cfg-addr-street').fill(ADDR.street);
-  await page.locator('#cfg-addr-suburb').fill(ADDR.suburb);
-  await page.locator('#cfg-addr-city').fill(ADDR.city);
-  await page.locator('#cfg-addr-province').fill(ADDR.province);
-  await page.locator('#cfg-addr-postal').fill(ADDR.postal);
-  await page.locator('#cfg-guest').fill(GUEST);
-  await page.locator('#cfg-host-name').fill('SENTINEL HOST');
-  await page.locator('#cfg-host-phone-num').fill('821234567');
+  if (addrPanelOpen) {
+    await page.locator('#cfg-addr-unit').last().fill(ADDR.unit);
+    await page.locator('#cfg-addr-street').last().fill(ADDR.street);
+    await page.locator('#cfg-addr-suburb').last().fill(ADDR.suburb);
+    await page.locator('#cfg-addr-city').last().fill(ADDR.city);
+    await page.locator('#cfg-addr-province').last().fill(ADDR.province);
+    await page.locator('#cfg-addr-postal').last().fill(ADDR.postal);
+  } else {
+    await page.evaluate(
+      ({ unit, street, suburb, city, province, postal }: Record<string, string>) => {
+        const setLast = (id: string, val: string) => {
+          const els = document.querySelectorAll<HTMLInputElement>(`#${id}`);
+          const el = els[els.length - 1];
+          if (!el) return;
+          el.value = val;
+          el.dispatchEvent(new Event('input',  { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+        };
+        setLast('cfg-addr-unit',     unit);
+        setLast('cfg-addr-street',   street);
+        setLast('cfg-addr-suburb',   suburb);
+        setLast('cfg-addr-city',     city);
+        setLast('cfg-addr-province', province);
+        setLast('cfg-addr-postal',   postal);
+      },
+      { unit: ADDR.unit, street: ADDR.street, suburb: ADDR.suburb, city: ADDR.city, province: ADDR.province, postal: ADDR.postal },
+    );
+  }
+  await page.locator('#cfg-guest').last().fill(GUEST);
+  await page.locator('#cfg-host-name').last().fill('SENTINEL HOST');
+  await page.locator('#cfg-host-phone-num').last().fill('821234567');
   await setDateField(page, 'cfg-checkin',  CHECKIN);
   await setDateField(page, 'cfg-checkout', CHECKOUT_DATE);
 
@@ -104,8 +138,8 @@ export async function fillConfigStep(
     if (await wifiSkip.isVisible({ timeout: 1_000 }).catch(() => false)) {
       if (wifiConfig) {
         // Fields #cfg-wifi-ssid and #cfg-wifi-pw are already visible at this sub-step.
-        await page.locator('#cfg-wifi-ssid').fill(wifiConfig.ssid);
-        await page.locator('#cfg-wifi-pw').fill(wifiConfig.password);
+        await page.locator('#cfg-wifi-ssid').last().fill(wifiConfig.ssid);
+        await page.locator('#cfg-wifi-pw').last().fill(wifiConfig.password);
         await page.locator('button:has-text("Continue →")').first().click();
       } else {
         await wifiSkip.click();
