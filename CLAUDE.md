@@ -83,6 +83,10 @@ Before writing a new fix for a recurring category of problem, check whether this
 
 - **Verifying a security control is real vs. cosmetic**: Don't trust a UI-level restriction (a hidden button, a disabled field, a client-side redirect) as proof of actual protection. Always attempt to reach the underlying request/endpoint directly to confirm the backend itself enforces the restriction, not just the UI. Use locator.click({ force: true }) as the practical technique to bypass UI-level guards and reach the underlying request.
 
+- **Toggle/panel controls that don't respond for later form instances**: When a click-to-toggle panel (e.g. address breakdown) works for a first form instance but silently fails for the second (item 2+ in a multi-item cart), don't increase the waitFor timeout — the panel genuinely isn't opening. Use a .then(() => true).catch(() => false) pattern to detect the failure, then fall back to setting the hidden inputs directly via page.evaluate() (el.value + dispatchEvent input+change), the same pattern setDateField uses for date fields. See fillConfigStep in checkout-helpers.ts (addrPanelOpen fallback).
+
+- **Storage-clearing helpers must verify page origin first**: page.evaluate() targets the current page's origin. If the browser may be on an external domain (e.g. PayFast after payment redirect), navigate to the target origin before calling the storage-clear evaluate, or the clear will target the wrong domain's storage. Check page.url() and call page.goto('/') if needed. See signOutCurrentUser in cart-combinations-live.spec.ts.
+
 Add new entries to this list whenever a genuinely reusable fix is found for a category of problem (not a one-off), so future debugging starts from what's already known to work rather than rediscovering it live.
 
 ### Debugging circuit breaker
