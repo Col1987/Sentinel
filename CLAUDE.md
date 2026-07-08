@@ -77,6 +77,8 @@ Before writing a new fix for a recurring category of problem, check whether this
 
 - **CI worker configuration**: This project intentionally runs with workers: 1 in CI (see playwright.config.ts) to avoid resource contention on shared runners. Do not assume local multi-worker timing behavior will match CI.
 
+- **Never run LIVE_MODE tests with multiple parallel workers against a shared real account**: playwright.config.ts forces workers: 1 whenever SENTINEL_LIVE_MODE=true, regardless of CI. Multiple parallel workers logging into the same real admin Firebase account simultaneously causes session/UI-state races (e.g. #btn-login resolving in the DOM but intermittently never becoming visible/stable for whichever worker loses the race), producing 180000ms+ locator.click timeouts that look like a rendering bug but are actually a concurrency bug in the test run itself. This is the same underlying principle as the CI worker note above (avoid resource/session contention), extended to a case the CI-only check didn't cover — local LIVE_MODE runs default to workers: 4.
+
 - **Selector discovery for a new site or new page**: Always run the discovery auditor against a new target page before writing selectors by hand.
 
 - **Test data resembling real customer information**: Any test data that could resemble real customer information (names, emails, phone numbers) must use the TEST_NAME_PREFIX / testEmail() / TEST_PHONE conventions from src/config/sites.ts, never ad-hoc realistic-looking fake data.

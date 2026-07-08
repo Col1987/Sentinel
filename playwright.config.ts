@@ -9,7 +9,9 @@ export default defineConfig({
   timeout: 60_000,
   globalSetup: './src/config/global-setup',
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : 4,
+  // Parallel workers all log into the same real admin Firebase account in LIVE_MODE,
+  // causing session/UI-state races (e.g. #btn-login intermittently failing to render) — force serial.
+  workers: (process.env.CI || process.env.SENTINEL_LIVE_MODE === 'true') ? 1 : 4,
   reporter: [
     ['list'],
     ['./src/reports/sentinel-reporter.ts'],
