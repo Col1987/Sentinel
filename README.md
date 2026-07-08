@@ -55,6 +55,7 @@ Every LIVE_MODE test is written mode-agnostic by default: it asserts what it can
 - Demo form accepts empty name submission when the HTML `required` attribute is stripped via DevTools. No JS-level validation guard exists in the submit handler.
 - 19 JavaScript functions exposed globally on `window` (addToCart, handleLogin, goToCheckout, etc). Callable from the browser console by any visitor.
 - Admin dashboard HTML renders before Firebase auth resolves. Content is in the DOM behind the auth overlay before authentication completes.
+- **Admin order search uses substring/prefix matching, not exact-email scoping.** Searching for one customer's full email address also returns another customer's order when both email addresses share a common base string (e.g. both using the same Gmail account with different `+tag` aliases). An admin filtering for a specific customer may inadvertently see unrelated customers' orders in the results set.
 
 **Accessibility:**
 - 24 WCAG AA colour contrast violations across the homepage.
@@ -97,6 +98,8 @@ Every LIVE_MODE test is written mode-agnostic by default: it asserts what it can
 - Price and quantity are never sent by the client at checkout — the server performs its own lookup from the order/pack reference. Confirmed by intercepting the Cloud Function payload and by checking the admin order record after a manipulated client-side price was submitted.
 - No order data leakage when guessing/incrementing a real order ID by one character.
 - No cart data loss between concurrent sessions on the same account.
+- No cross-customer data leak on welcome pages — each customer's welcome page serves only their own guest name, property name, and order data, confirmed with two real concurrent orders in Firestore.
+- No cross-customer data leak on the order tracking page — neither customer's data appeared on the other's tracking result when probed with two real, valid, different order IDs.
 - Full admin pack CRUD lifecycle (create, edit, delete) persists correctly to the database and reflects on the public storefront.
 - The order lifecycle correctly progresses through all six statuses with each transition persisting, and waybill entry saves correctly.
 - Remember Me correctly switches Firebase between LOCAL (persists across browser restarts) and SESSION persistence.
@@ -218,7 +221,7 @@ Built the full test engine, 130 tests across smoke, functional, security, audit,
 
 Full checkout through real PayFast sandbox, order lifecycle status progression, waybill persistence, welcome page rendering against real guest data, full admin pack CRUD lifecycle, login lockout and session persistence, and automated email verification via Gmail API are all confirmed working end-to-end against the real backend.
 
-Business-scenario testing across three of four dimensions is complete: customer/property variation (single-property-per-account architecture confirmed, international phone formats validated), cart/product combinations (every pack's data verified, checkout confirmed working for a representative sample, and two significant real findings surfaced — a dropped cart item in multi-pack checkouts, and Wi-Fi configuration not reaching the welcome page in multi-item carts), and abuse/security testing (price and quantity manipulation confirmed impossible, order ID enumeration confirmed safe, no cart data loss across concurrent sessions). Remaining: cross-customer data boundary correctness (does one customer's data ever leak into another's view).
+Business-scenario testing across all four dimensions is now complete. Customer/property variation (single-property-per-account architecture confirmed, international phone formats validated). Cart/product combinations (every pack's data verified, checkout confirmed working for a representative sample, two significant findings surfaced — a dropped cart item in multi-pack checkouts, and Wi-Fi configuration not reaching the welcome page in multi-item carts). Abuse/security testing (price and quantity manipulation confirmed impossible, order ID enumeration confirmed safe, no cart data loss across concurrent sessions). Cross-customer data boundary correctness: welcome pages and order tracking are correctly scoped per customer with no cross-contamination; one finding surfaced — the admin order search uses substring matching rather than exact-email scoping, meaning a search for one customer's email can return another customer's order when email addresses share a common base string.
 
 A second, separate Test Case Report (distinct from the Findings Report) is planned — deterministic, test-management-tool style with Test ID / Scenario / Steps / Expected / Actual / Status / Remediation columns, better suited to documenting business-scenario verification than the findings-and-severity format.
 
