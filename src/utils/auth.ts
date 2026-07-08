@@ -1,4 +1,33 @@
 import { type Page } from '@playwright/test';
+import { defaultSite } from '../config/sites';
+
+// Clears any existing Firebase session by wiping localStorage, sessionStorage, and the
+// known Firebase IndexedDB databases, then waits for #btn-login to reappear. Safe and
+// cheap to call even when there's nothing to clear. Proven pattern, originally evolved
+// independently in tests/security/data-boundary-live.spec.ts and
+// tests/functional/cart-combinations-live.spec.ts — this is the shared, canonical version
+// for new code to import rather than re-duplicating the same logic again.
+export async function signOutCurrentUser(page: Page): Promise<void> {
+  if (!page.url().startsWith(defaultSite.baseUrl)) {
+    await page.goto('/', { waitUntil: 'load', timeout: 20_000 });
+  }
+  await page.evaluate(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    const FIREBASE_DBS = ['firebaseLocalStorageDb', 'firebase-installations-database', 'firebase-heartbeat-database'];
+    for (const name of FIREBASE_DBS) {
+      try { window.indexedDB.deleteDatabase(name); } catch { /* ignore */ }
+    }
+  });
+  await page.goto('/', { waitUntil: 'load', timeout: 20_000 });
+  await page.waitForFunction(
+    () => {
+      const btn = document.getElementById('btn-login');
+      return !!btn && !btn.classList.contains('hidden') && window.getComputedStyle(btn).display !== 'none';
+    },
+    { timeout: 15_000 },
+  );
+}
 
 // Requires ADMIN_EMAIL and ADMIN_PASSWORD in .env (Playwright loads .env automatically).
 // Admin accounts are redirected to /admin.html by Firebase custom claim check on login.
@@ -16,7 +45,12 @@ export async function loginAsAdmin(page: Page): Promise<void> {
     );
   }
 
-  await page.goto('/');
+  // Clear any existing session (e.g. a guest checkout account left logged in) before
+  // attempting admin login. #btn-login stays hidden whenever a user is already
+  // authenticated, so without this the click below waits indefinitely for a button
+  // that never appears.
+  await signOutCurrentUser(page);
+
   await page.locator('#btn-login').click();
   await page.locator('#login-email').waitFor({ state: 'visible' });
   await page.locator('#login-email').fill(email);

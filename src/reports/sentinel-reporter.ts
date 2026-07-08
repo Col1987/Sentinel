@@ -21,6 +21,7 @@ interface TestRecord {
   errorMessage?: string;
   screenshotB64?: string;
   description?: string;
+  isInfraIssue: boolean;
 }
 
 interface FindingRecord {
@@ -31,6 +32,10 @@ interface FindingRecord {
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
+
+// Marks a thrown error as a Sentinel-side infrastructure problem (e.g. an expired Gmail
+// OAuth token) rather than a defect in the site under test. See src/utils/gmail.ts.
+const INFRA_ISSUE_MARKER = 'SENTINEL INFRASTRUCTURE ISSUE';
 
 const SEVERITY_ORDER: Severity[] = ['critical', 'high', 'medium', 'low', 'info'];
 
@@ -351,8 +356,9 @@ function renderExecSummary(
   origin: string,
 ): string {
   const passed  = tests.filter(t => t.status === 'passed').length;
-  const failed  = tests.filter(t => t.status === 'failed' || t.status === 'timedOut').length;
+  const failed  = tests.filter(t => (t.status === 'failed' || t.status === 'timedOut') && !t.isInfraIssue).length;
   const skipped = tests.filter(t => t.status === 'skipped').length;
+  const infra   = tests.filter(t => (t.status === 'failed' || t.status === 'timedOut') && t.isInfraIssue).length;
   const total   = tests.length;
 
   const allAuditFindings = auditResults.flatMap(r => r.findings);
@@ -363,9 +369,15 @@ function renderExecSummary(
   for (const f of securityFindings) counts[f.severity]++;
   const urgent = counts.critical + counts.high;
 
+  const extras = [
+    passed ? `${passed} passed` : '',
+    skipped ? `${skipped} skipped` : '',
+    infra ? `${infra} infrastructure issue${infra === 1 ? '' : 's'}` : '',
+  ].filter(Boolean).join(', ');
+
   const testSummary = failed === 0
-    ? `<strong>${passed}</strong> of <strong>${total}</strong> tests passed.`
-    : `<strong class="stat-fail-text">${failed} test${failed === 1 ? '' : 's'} failed</strong> out of <strong>${total}</strong> (${passed} passed${skipped ? `, ${skipped} skipped` : ''}).`;
+    ? `<strong>${passed}</strong> of <strong>${total}</strong> tests passed.${infra ? ` <strong>${infra}</strong> additional test${infra === 1 ? '' : 's'} hit a Sentinel infrastructure issue (not a site defect).` : ''}`
+    : `<strong class="stat-fail-text">${failed} test${failed === 1 ? '' : 's'} failed</strong> out of <strong>${total}</strong>${extras ? ` (${extras})` : ''}.`;
 
   const findingSummary = totalFindings === 0
     ? 'No audit or security findings were detected.'
@@ -432,7 +444,13 @@ function renderRuleGroup(message: string, groupFindings: AuditFinding[]): string
   </div>`;
 }
 
-function renderTestIcon(status: TestRecord['status']): string {
+function renderTestIcon(status: TestRecord['status'], isInfraIssue: boolean): string {
+  if (isInfraIssue) {
+    return `<svg class="test-icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Test infrastructure issue">
+      <circle cx="10" cy="10" r="9" fill="#f1f5f9" stroke="#64748b" stroke-width="1.5"/>
+      <path d="M10 6.5v4.5M10 13.75h.01" stroke="#64748b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>`;
+  }
   if (status === 'passed') {
     return `<svg class="test-icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Passed">
       <circle cx="10" cy="10" r="9" fill="#dcfce7" stroke="#16a34a" stroke-width="1.5"/>
@@ -471,31 +489,35 @@ function renderTestSection(tests: TestRecord[]): string {
 
   const cards = sorted.map(([project, projectTests]) => {
     const nPassed  = projectTests.filter(t => t.status === 'passed').length;
-    const nFailed  = projectTests.filter(t => t.status === 'failed' || t.status === 'timedOut').length;
+    const nFailed  = projectTests.filter(t => (t.status === 'failed' || t.status === 'timedOut') && !t.isInfraIssue).length;
     const nSkipped = projectTests.filter(t => t.status === 'skipped').length;
+    const nInfra   = projectTests.filter(t => (t.status === 'failed' || t.status === 'timedOut') && t.isInfraIssue).length;
     const nTotal   = projectTests.length;
     const borderColour = nFailed > 0 ? '#dc2626' : '#16a34a';
 
     const testItems = projectTests.map(t => {
-      const isFailed  = t.status === 'failed' || t.status === 'timedOut';
+      const isInfra   = (t.status === 'failed' || t.status === 'timedOut') && t.isInfraIssue;
+      const isFailed  = (t.status === 'failed' || t.status === 'timedOut') && !t.isInfraIssue;
       const isSkipped = t.status === 'skipped';
-      const statusClass = isFailed ? 'test-item--failed' : isSkipped ? 'test-item--skipped' : 'test-item--passed';
+      const statusClass = isInfra ? 'test-item--infra' : isFailed ? 'test-item--failed' : isSkipped ? 'test-item--skipped' : 'test-item--passed';
 
       const descHtml = t.description
         ? `<p class="test-item-desc">${escapeHtml(t.description)}</p>`
         : '';
-      const errorHtml = isFailed && t.errorMessage
-        ? `<pre class="test-error-inline">${escapeHtml(t.errorMessage)}</pre>`
+      const errorHtml = (isFailed || isInfra) && t.errorMessage
+        ? `<pre class="test-error-inline${isInfra ? ' test-error-inline--infra' : ''}">${escapeHtml(t.errorMessage)}</pre>`
         : '';
       const screenshotHtml = isFailed && t.screenshotB64
         ? `<img class="test-screenshot-inline" src="data:image/png;base64,${t.screenshotB64}" alt="Screenshot at point of failure" loading="lazy">`
         : '';
+      const infraBadge = isInfra ? `<span class="infra-badge">Test Infrastructure</span>` : '';
 
       return `<div class="test-item ${statusClass}">
-        ${renderTestIcon(t.status)}
+        ${renderTestIcon(t.status, isInfra)}
         <div class="test-item-body">
           <div class="test-item-header">
             <span class="test-item-title">${escapeHtml(t.displayPath)}</span>
+            ${infraBadge}
             <span class="test-item-duration">${formatDuration(t.durationMs)}</span>
           </div>
           ${descHtml}${errorHtml}${screenshotHtml}
@@ -510,6 +532,7 @@ function renderTestSection(tests: TestRecord[]): string {
           <span class="stat stat-pass">${nPassed} passed</span>
           ${nFailed  > 0 ? `<span class="stat stat-fail">${nFailed} failed</span>` : ''}
           ${nSkipped > 0 ? `<span class="stat stat-skip">${nSkipped} skipped</span>` : ''}
+          ${nInfra   > 0 ? `<span class="stat stat-infra">${nInfra} infrastructure</span>` : ''}
           <span class="stat stat-total">${nTotal} total</span>
         </div>
       </div>
@@ -742,6 +765,7 @@ body {
 .stat-pass   { background: #dcfce7; color: #15803d; }
 .stat-fail   { background: #fee2e2; color: #b91c1c; }
 .stat-skip   { background: #f1f5f9; color: #64748b; }
+.stat-infra  { background: #f1f5f9; color: #64748b; }
 .stat-total  { background: #f1f5f9; color: #475569; }
 
 
@@ -811,6 +835,19 @@ details.test-list-details > summary::-webkit-details-marker { display: none; }
 .test-item-title { font-size: 0.82rem; font-weight: 600; color: #1e293b; flex: 1; min-width: 0; }
 .test-item--failed .test-item-title { color: #b91c1c; }
 .test-item--skipped .test-item-title { color: #64748b; font-style: italic; }
+.test-item--infra .test-item-title { color: #475569; }
+.infra-badge {
+  font-size: 0.6rem;
+  font-weight: 700;
+  padding: 0.2em 0.6em;
+  border-radius: 4px;
+  color: #475569;
+  background: #e2e8f0;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
 .test-item-duration { font-size: 0.68rem; color: #94a3b8; white-space: nowrap; flex-shrink: 0; }
 .test-item-desc { font-size: 0.78rem; color: #475569; line-height: 1.55; }
 .test-error-inline {
@@ -826,6 +863,11 @@ details.test-list-details > summary::-webkit-details-marker { display: none; }
   overflow-x: auto;
   max-height: 200px;
   overflow-y: auto;
+}
+.test-error-inline--infra {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #475569;
 }
 .test-screenshot-inline {
   margin-top: 0.5rem;
@@ -914,6 +956,11 @@ class SentinelReporter implements Reporter {
         .join('\n---\n') || 'Test failed (no error message)';
     }
 
+    // Self-identifying infrastructure failures (e.g. an expired Gmail OAuth token) are not
+    // a claim about the site under test — flag them so the report can badge them distinctly
+    // instead of counting them as a red "failed" finding.
+    const isInfraIssue = errorMessage?.includes(INFRA_ISSUE_MARKER) ?? false;
+
     // Build display path: describe blocks + test title, excluding project/file prefix
     const displayPath = test.titlePath().slice(3).join(' › ') || test.title;
 
@@ -929,6 +976,7 @@ class SentinelReporter implements Reporter {
       errorMessage,
       screenshotB64,
       description,
+      isInfraIssue,
     });
   }
 

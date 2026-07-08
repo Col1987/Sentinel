@@ -7,6 +7,27 @@ const POLL_INTERVAL_MS          = 3_000;
 const POLL_TIMEOUT_MS           = 30_000;
 const ORDER_POLL_TIMEOUT_MS     = 60_000;
 
+const GMAIL_INFRA_ERROR =
+  'SENTINEL INFRASTRUCTURE ISSUE: Gmail OAuth refresh token has expired or been revoked. ' +
+  'This is not a site defect — Sentinel\'s test email account needs re-authorization. ' +
+  'See docs/gmail-setup.md for the token refresh procedure.';
+
+// Wraps a Gmail API call so an expired/revoked refresh token surfaces as a distinct,
+// self-identifying infrastructure error instead of a raw "invalid_grant" thrown deep in
+// googleapis internals — callers and the reporter can then distinguish "our OAuth token
+// needs renewal" from an actual site defect, rather than logging it as a [FINDING].
+async function callGmailApi<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.includes('invalid_grant')) {
+      throw new Error(GMAIL_INFRA_ERROR);
+    }
+    throw err;
+  }
+}
+
 function decodeBase64Url(data: string): string {
   const base64 = data.replace(/-/g, '+').replace(/_/g, '/');
   return Buffer.from(base64, 'base64').toString('utf-8');
@@ -95,20 +116,20 @@ export async function getLatestVerificationEmail(sentAfter: Date): Promise<strin
   const deadline = Date.now() + POLL_TIMEOUT_MS;
 
   while (Date.now() < deadline) {
-    const listResp = await gmail.users.messages.list({
+    const listResp = await callGmailApi(() => gmail.users.messages.list({
       userId: 'me',
       q: query,
       maxResults: 5,
-    });
+    }));
 
     const messages = listResp.data.messages ?? [];
 
     if (messages.length > 0) {
-      const msgResp = await gmail.users.messages.get({
+      const msgResp = await callGmailApi(() => gmail.users.messages.get({
         userId: 'me',
         id: messages[0].id!,
         format: 'full',
-      });
+      }));
 
       const body = extractBody(msgResp.data.payload);
       const link = extractVerificationLink(body);
@@ -157,18 +178,18 @@ export async function getLatestOrderConfirmationEmail(sentAfter: Date): Promise<
   const deadline = Date.now() + ORDER_POLL_TIMEOUT_MS;
 
   while (Date.now() < deadline) {
-    const listResp = await gmail.users.messages.list({
+    const listResp = await callGmailApi(() => gmail.users.messages.list({
       userId: 'me',
       q: query,
       maxResults: 10,
-    });
+    }));
 
     for (const msg of listResp.data.messages ?? []) {
-      const msgResp = await gmail.users.messages.get({
+      const msgResp = await callGmailApi(() => gmail.users.messages.get({
         userId: 'me',
         id: msg.id!,
         format: 'full',
-      });
+      }));
       const body = extractBody(msgResp.data.payload);
       const link = extractTrackingLink(body);
       if (link) return link;
