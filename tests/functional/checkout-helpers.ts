@@ -73,8 +73,8 @@ export async function registerForCheckout(page: Page): Promise<string> {
   return email;
 }
 
-export async function addPackAndGoToCheckout(page: Page): Promise<void> {
-  await page.evaluate((id: string) => (window as any).addToCart(id), PACK_ID);
+export async function addPackAndGoToCheckout(page: Page, packId: string = PACK_ID): Promise<void> {
+  await page.evaluate((id: string) => (window as any).addToCart(id), packId);
   await page.waitForTimeout(600);
   await page.goto('/checkout.html', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(1_500);
@@ -198,13 +198,11 @@ export async function fillConfigStep(
   }
 }
 
-export async function advanceThroughDeliveryToPayment(page: Page): Promise<void> {
-  await page.locator('button:has-text("Proceed to Payment →")').waitFor({ state: 'visible', timeout: 15_000 });
-  await page.locator('button:has-text("Proceed to Payment →")').click();
-  const skipBtn = page.locator('button:has-text("Skip upgrades")');
-  if (await skipBtn.isVisible({ timeout: 5_000 }).catch(() => false)) {
-    await skipBtn.click();
-  }
+// Handles the optional "Save configuration" step and waits for the payment step to
+// appear. Shared by advanceThroughDeliveryToPayment and any flow that reaches this point
+// by a different path (e.g. after handling the Personalise Your Pack upgrade modal
+// manually instead of auto-skipping it — see premium-upgrades-live.spec.ts).
+export async function handleSaveConfigAndReachPayment(page: Page): Promise<void> {
   const saveStep = page.locator('#checkout-step-save');
   if (await saveStep.isVisible({ timeout: 3_000 }).catch(() => false)) {
     await saveStep.locator('button').last().click();
@@ -212,18 +210,20 @@ export async function advanceThroughDeliveryToPayment(page: Page): Promise<void>
   await page.locator('#checkout-step-payment').waitFor({ state: 'visible', timeout: 10_000 });
 }
 
-// Runs the full checkout flow, submits payment, and returns the checkout email
-// and the order ID captured from the Cloud Function response.
-// On return the browser is on the PayFast sandbox redirect page.
-// Pass wifiConfig to include Wi-Fi credentials in the order; omit to skip Wi-Fi.
-export async function runCheckoutFlow(
-  page: Page,
-  options?: { wifiConfig?: { ssid: string; password: string } },
-): Promise<{ checkoutEmail: string; orderId: string | null }> {
-  const checkoutEmail = await registerForCheckout(page);
-  await addPackAndGoToCheckout(page);
-  await fillConfigStep(page, options?.wifiConfig);
-  await advanceThroughDeliveryToPayment(page);
+export async function advanceThroughDeliveryToPayment(page: Page): Promise<void> {
+  await page.locator('button:has-text("Proceed to Payment →")').waitFor({ state: 'visible', timeout: 15_000 });
+  await page.locator('button:has-text("Proceed to Payment →")').click();
+  const skipBtn = page.locator('button:has-text("Skip upgrades")');
+  if (await skipBtn.isVisible({ timeout: 5_000 }).catch(() => false)) {
+    await skipBtn.click();
+  }
+  await handleSaveConfigAndReachPayment(page);
+}
+
+// Fills the billing address and submits payment from the payment step. Returns the
+// order ID captured from the Cloud Function response if present in the body (often
+// absent — see runCheckoutFlow's callers, which fall back to an admin lookup by email).
+export async function submitPaymentAndCapture(page: Page): Promise<string | null> {
   await page.locator('#co-billing-addr').fill(ADDR.billing);
 
   const cfResponsePromise = page.waitForResponse(
@@ -242,6 +242,23 @@ export async function runCheckoutFlow(
     orderId = (result?.orderId ?? result?.id ?? body?.orderId ?? null) as string | null;
   }
   if (orderId) console.log(`[INFO] CF orderId=${orderId}`);
+
+  return orderId;
+}
+
+// Runs the full checkout flow, submits payment, and returns the checkout email
+// and the order ID captured from the Cloud Function response.
+// On return the browser is on the PayFast sandbox redirect page.
+// Pass wifiConfig to include Wi-Fi credentials in the order; omit to skip Wi-Fi.
+export async function runCheckoutFlow(
+  page: Page,
+  options?: { wifiConfig?: { ssid: string; password: string } },
+): Promise<{ checkoutEmail: string; orderId: string | null }> {
+  const checkoutEmail = await registerForCheckout(page);
+  await addPackAndGoToCheckout(page);
+  await fillConfigStep(page, options?.wifiConfig);
+  await advanceThroughDeliveryToPayment(page);
+  const orderId = await submitPaymentAndCapture(page);
 
   return { checkoutEmail, orderId };
 }
