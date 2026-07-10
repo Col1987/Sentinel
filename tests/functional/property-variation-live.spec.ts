@@ -4,7 +4,7 @@ import { loginAsAdmin } from '../../src/utils/auth';
 import {
   PACK_ID,
   registerForCheckout, addPackAndGoToCheckout, advanceThroughDeliveryToPayment,
-  setDateField,
+  setDateField, dateFromCheckinBase,
 } from './checkout-helpers';
 
 const CF_PATTERN  = '**cloudfunctions.net**';
@@ -20,6 +20,10 @@ interface PropAddr {
   checkin: string; checkoutDate: string;
 }
 
+// Dates are offset from the same dynamic base checkout-helpers.ts computes CHECKIN from
+// (today + 30 days) — never hardcode calendar dates here; see CLAUDE.md "Known-working
+// patterns". Offsets preserve the original staggered-stay spacing: Alpha runs first,
+// Beta's stay starts the day Alpha's ends.
 const PROP_ALPHA: PropAddr = {
   name:         'Sentinel Alpha Lodge',
   unit:         '1', street: 'Alpha Avenue', suburb: 'Rondebosch',
@@ -27,7 +31,7 @@ const PROP_ALPHA: PropAddr = {
   guest:        'SENTINEL ALPHA GUEST',
   hostName:     'SENTINEL HOST ALPHA',
   hostPhone:    '821111111',
-  checkin:      '2026-08-01', checkoutDate: '2026-08-04',
+  checkin:      dateFromCheckinBase(17), checkoutDate: dateFromCheckinBase(20),
 };
 
 const PROP_BETA: PropAddr = {
@@ -37,7 +41,7 @@ const PROP_BETA: PropAddr = {
   guest:        'SENTINEL BETA GUEST',
   hostName:     'SENTINEL HOST BETA',
   hostPhone:    '822222222',
-  checkin:      '2026-08-05', checkoutDate: '2026-08-08',
+  checkin:      dateFromCheckinBase(21), checkoutDate: dateFromCheckinBase(24),
 };
 
 // Mirrors fillConfigStep from checkout-helpers but accepts arbitrary property details.

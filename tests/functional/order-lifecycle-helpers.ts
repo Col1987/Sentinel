@@ -82,10 +82,18 @@ export async function findAndOpenOrderInAdmin(page: Page, checkoutEmail: string,
 
   // Prefer opening directly by ID when the CF gave us one
   if (cfOrderId) {
-    await openOrderModal(page, cfOrderId);
-    const modalOrderId = await getModalOrderId(page);
-    if (modalOrderId) return modalOrderId;
-    await closeOrderModal(page);
+    try {
+      await openOrderModal(page, cfOrderId);
+      const modalOrderId = await getModalOrderId(page);
+      if (modalOrderId) return modalOrderId;
+      await closeOrderModal(page);
+    } catch {
+      // The direct-ID lookup can fail even when the underlying Firestore doc already
+      // exists and is fully correct — observed case: the admin dashboard's own order
+      // list (whatever viewOrder() reads from) hadn't synced the just-created order yet,
+      // right after a fresh admin login. Fall through to the search-and-retry loop below
+      // instead of letting this abort the whole lookup.
+    }
   }
 
   // Fallback: search by customer name, scan rows for the checkout email
@@ -98,10 +106,16 @@ export async function findAndOpenOrderInAdmin(page: Page, checkoutEmail: string,
     for (const row of rows) {
       const rowText = await row.textContent().catch(() => '');
       if (rowText?.includes(checkoutEmail)) {
-        await row.locator('button:has-text("View")').click();
-        await page.locator('#order-modal').waitFor({ state: 'visible', timeout: 8_000 });
-        await page.waitForTimeout(800);
-        return getModalOrderId(page);
+        try {
+          await row.locator('button:has-text("View")').click();
+          await page.locator('#order-modal').waitFor({ state: 'visible', timeout: 8_000 });
+          await page.waitForTimeout(800);
+          return getModalOrderId(page);
+        } catch {
+          // Same admin-dashboard listener/sync latency as the direct-ID branch above — the
+          // row matched, but clicking View didn't open the modal in time. Fall through to
+          // the refresh-and-retry below instead of aborting the whole lookup.
+        }
       }
     }
     await page.locator('#orders-refresh-btn').click();

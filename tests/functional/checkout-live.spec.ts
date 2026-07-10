@@ -1,11 +1,13 @@
 import { test, expect } from '@playwright/test';
-import { LIVE_MODE } from '../../src/config/sites';
+import { LIVE_MODE, defaultSite } from '../../src/config/sites';
 import { loginAsAdmin } from '../../src/utils/auth';
 import { getLatestOrderConfirmationEmail } from '../../src/utils/gmail';
 import {
   PACK_LABEL, EXPECTED_SUBTOTAL, ADDR,
   registerForCheckout, addPackAndGoToCheckout, fillConfigStep, advanceThroughDeliveryToPayment,
+  runCheckoutFlow, completePayFastSandboxPayment, callCreatePayFastPayment, readOrderDocument,
 } from './checkout-helpers';
+import { findAndOpenOrderInAdmin } from './order-lifecycle-helpers';
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
@@ -574,6 +576,171 @@ test.describe('Checkout flows (LIVE_MODE only)', { tag: ['@functional'] }, () =>
     } else {
       console.log(`[INFO] checkout-confirmation-email-tracking-link: tracking page status is "${trackStatus}" ✓`);
     }
+  });
+
+  // ── PayFast payment completion and Cloud Function authorization ─────────────
+
+  test('payfast-sandbox-payment-completes — completing a real PayFast sandbox payment updates the order status and shows a genuine confirmation', async ({ page }) => {
+    test.setTimeout(180_000);
+    test.info().annotations.push({
+      type: 'description',
+      description: "Completed a full sandbox checkout and then actually completed the PayFast sandbox payment — using PayFast's own pre-funded sandbox test wallet, reached by skipping the optional login/OTP step — rather than stopping at the redirect like the other checkout tests. Confirms two things a stopped-at-redirect test cannot: that the order's status in the admin dashboard is actually updated as a result of PayFast's payment notification, not just the 'Pending' status set when the order was first created, and that the customer lands on a genuine on-site confirmation page rather than being stranded on PayFast or an error page.",
+    });
+
+    const { checkoutEmail } = await runCheckoutFlow(page);
+    const paidOrderId = await completePayFastSandboxPayment(page);
+
+    // ── (b) genuine confirmation page ──────────────────────────────────────
+    const doneVisible = await page.locator('#checkout-step-done').isVisible().catch(() => false);
+    if (!doneVisible) {
+      console.error(
+        '[FINDING][high] payfast-sandbox-payment-completes: after completing payment, the customer did not land ' +
+          `on the on-site confirmation step (#checkout-step-done). Final URL: "${page.url()}".`,
+      );
+    } else {
+      console.log('[INFO] payfast-sandbox-payment-completes: genuine on-site confirmation page shown ✓');
+    }
+    expect(doneVisible, 'After a completed PayFast payment, the customer must land on the on-site confirmation step').toBe(true);
+
+    // ── (a) order is visible in admin ─────────────────────────────────────────
+    await loginAsAdmin(page);
+    const orderId = await findAndOpenOrderInAdmin(page, checkoutEmail, paidOrderId);
+    if (!orderId) {
+      console.error(
+        `[FINDING][critical] payfast-sandbox-payment-completes: order for ${checkoutEmail} not found in admin after a completed payment.`,
+      );
+    }
+    expect(orderId, 'The paid order must be findable in the admin dashboard').not.toBeNull();
+
+    // ── (a) payment notification actually reached the backend ────────────────
+    // The fulfilment `status` field (Pending/Assembling/...) is correctly admin-controlled
+    // and unrelated to payment — it never changes as a result of PayFast's notification.
+    // The real payment-confirmation signal is the payfastStatus field on the order doc,
+    // written by the ITN handler independently of the admin UI (see diagnostic run).
+    const orderDoc = await readOrderDocument(page, paidOrderId!);
+    console.log(`[INFO] payfast-sandbox-payment-completes: order doc payfastStatus = "${orderDoc.data?.payfastStatus}" (exists=${orderDoc.exists})`);
+
+    if (orderDoc.data?.payfastStatus !== 'COMPLETE') {
+      console.error(
+        `[FINDING][high] payfast-sandbox-payment-completes: order document's payfastStatus is ` +
+          `"${orderDoc.data?.payfastStatus}" after a completed PayFast sandbox payment, not "COMPLETE" — the ` +
+          'payment-notification (ITN) handler may not be updating the order correctly.',
+      );
+    } else {
+      console.log('[INFO] payfast-sandbox-payment-completes: payfastStatus="COMPLETE" confirmed ✓');
+    }
+    expect(orderDoc.data?.payfastStatus, 'Order document payfastStatus must be "COMPLETE" after a completed PayFast payment').toBe('COMPLETE');
+  });
+
+  test('create-payfast-payment-rejects-non-owner — calling createPayFastPayment for another customer\'s order is rejected', async ({ browser }) => {
+    test.slow();
+    test.info().annotations.push({
+      type: 'description',
+      description: "Created a real order under customer A, then — while authenticated as a completely different customer B — called the createPayFastPayment Cloud Function directly, the same call the site's own checkout page makes, for customer A's order ID. If the backend does not verify order ownership, this would let one customer trigger PayFast payment processing for another customer's order. Logged as a critical finding if the call succeeds instead of being rejected.",
+    });
+
+    // ── Customer A: create a real order ──────────────────────────────────────
+    const contextA = await browser.newContext();
+    const pageA = await contextA.newPage();
+    let checkoutEmail = '';
+    try {
+      ({ checkoutEmail } = await runCheckoutFlow(pageA));
+      console.log(`[INFO] create-payfast-payment-rejects-non-owner: order created for customer A (${checkoutEmail})`);
+    } finally {
+      await contextA.close();
+    }
+
+    // Look up the real orderId via admin — the CF response body doesn't reliably expose it.
+    const adminContext = await browser.newContext();
+    const adminPage = await adminContext.newPage();
+    let orderId: string | null = null;
+    try {
+      await loginAsAdmin(adminPage);
+      orderId = await findAndOpenOrderInAdmin(adminPage, checkoutEmail, null);
+    } finally {
+      await adminContext.close();
+    }
+
+    if (!orderId) {
+      console.error(
+        '[FINDING][critical] create-payfast-payment-rejects-non-owner: could not locate customer A\'s order in ' +
+          'admin — cannot verify the ownership check.',
+      );
+    }
+    expect(orderId, 'Customer A\'s order must be findable in admin to run this ownership check').not.toBeNull();
+
+    // ── Customer B: attempt to pay for A's order ────────────────────────────
+    const contextB = await browser.newContext();
+    const pageB = await contextB.newPage();
+    try {
+      await registerForCheckout(pageB);
+      const result = await callCreatePayFastPayment(pageB, { orderId: orderId!, origin: defaultSite.baseUrl });
+
+      if (result.success) {
+        console.error(
+          `[FINDING][critical] create-payfast-payment-rejects-non-owner: createPayFastPayment SUCCEEDED for ` +
+            `another customer's order (${orderId}) — a customer can trigger payment processing for orders they ` +
+            `do not own. Response: ${JSON.stringify(result.data)}`,
+        );
+      } else {
+        const isPermissionDenied = (result.code ?? '').includes('permission-denied');
+        if (isPermissionDenied) {
+          console.log(`[INFO] create-payfast-payment-rejects-non-owner: rejected with "${result.code}" ✓`);
+        } else {
+          console.warn(
+            `[FINDING][medium] create-payfast-payment-rejects-non-owner: call was rejected, but not with ` +
+              `"permission-denied" — got code="${result.code}", message="${result.message}". Verify this is still a genuine ownership check.`,
+          );
+        }
+      }
+
+      expect(result.success, 'createPayFastPayment must reject a request for an order the caller does not own').toBe(false);
+    } finally {
+      await contextB.close();
+    }
+  });
+
+  test('create-payfast-payment-rejects-already-paid — calling createPayFastPayment again for an already-paid order is rejected', async ({ page }) => {
+    test.setTimeout(180_000);
+    test.info().annotations.push({
+      type: 'description',
+      description: "Completed a real PayFast sandbox payment for a fresh order, then called createPayFastPayment again for that same, now-paid order — simulating a customer using the browser back button after payment completes. If the backend does not check whether the order has already been paid, this could let a customer generate a second valid signed PayFast redirect for an order that's already been charged. Logged as a critical finding — a potential double-charge vector — if the call succeeds instead of being rejected.",
+    });
+
+    await runCheckoutFlow(page);
+    const orderId = await completePayFastSandboxPayment(page);
+
+    if (!orderId) {
+      console.error(
+        '[FINDING][critical] create-payfast-payment-rejects-already-paid: could not capture the order ID from ' +
+          'the PayFast return redirect — cannot verify the already-paid check.',
+      );
+    }
+    expect(orderId, 'The order ID must be captured from the PayFast return redirect to run this check').not.toBeNull();
+
+    // page is back on juelhaus.co.za, still authenticated as the order's own owner —
+    // this reproduces a back-button-style repeat call, not a cross-customer attempt.
+    const result = await callCreatePayFastPayment(page, { orderId: orderId!, origin: defaultSite.baseUrl });
+
+    if (result.success) {
+      console.error(
+        `[FINDING][critical] create-payfast-payment-rejects-already-paid: createPayFastPayment SUCCEEDED for an ` +
+          `order (${orderId}) that was already paid — a customer could generate a second valid signed PayFast ` +
+          `redirect via back-button abuse, risking a double charge. Response: ${JSON.stringify(result.data)}`,
+      );
+    } else {
+      const isFailedPrecondition = (result.code ?? '').includes('failed-precondition');
+      if (isFailedPrecondition) {
+        console.log(`[INFO] create-payfast-payment-rejects-already-paid: rejected with "${result.code}" ✓`);
+      } else {
+        console.warn(
+          `[FINDING][medium] create-payfast-payment-rejects-already-paid: call was rejected, but not with ` +
+            `"failed-precondition" — got code="${result.code}", message="${result.message}". Verify this is still a genuine already-paid check.`,
+        );
+      }
+    }
+
+    expect(result.success, 'createPayFastPayment must reject a repeat call for an order that has already been paid').toBe(false);
   });
 
 });

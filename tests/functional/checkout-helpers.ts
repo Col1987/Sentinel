@@ -16,8 +16,37 @@ export const ADDR = {
   billing:  '1 QA Avenue, Green Point, Cape Town, 8001',
 };
 export const GUEST         = `${TEST_NAME_PREFIX} GUEST`;
-export const CHECKIN       = '2026-07-15';
-export const CHECKOUT_DATE = '2026-07-18';
+
+// Check-in/check-out dates must be computed relative to test-run time, not hardcoded —
+// the checkout config step enforces a minimum delivery lead time from "today", so a fixed
+// calendar date silently starts failing once real time catches up to it (see CLAUDE.md
+// "Known-working patterns": never hardcode calendar dates with a real-world time-based
+// validation dependency). CHECKIN_BASE_DATE is computed fresh every time this module loads
+// (i.e. every test run) — nothing here is cached or written to a file.
+function addDays(base: Date, days: number): Date {
+  const d = new Date(base);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+function formatDate(d: Date): string {
+  const y   = d.getFullYear();
+  const m   = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+const CHECKIN_BASE_DATE = addDays(new Date(), 30);
+
+export const CHECKIN       = formatDate(CHECKIN_BASE_DATE);
+export const CHECKOUT_DATE = formatDate(addDays(CHECKIN_BASE_DATE, 3));
+
+// For tests needing dates at a different offset from the same dynamic base (e.g.
+// multi-property tests needing staggered stays) — always compute relative to
+// CHECKIN_BASE_DATE rather than introducing another hardcoded calendar date.
+export function dateFromCheckinBase(daysOffset: number): string {
+  return formatDate(addDays(CHECKIN_BASE_DATE, daysOffset));
+}
 
 // Registers a fresh non-admin Firebase account and returns the email used.
 // Admin accounts redirect from / to /admin.html, making addToCart unreachable.
@@ -215,4 +244,113 @@ export async function runCheckoutFlow(
   if (orderId) console.log(`[INFO] CF orderId=${orderId}`);
 
   return { checkoutEmail, orderId };
+}
+
+// Completes a real PayFast SANDBOX payment from the PayFast redirect page reached after
+// runCheckoutFlow(). Discovery (see reports/scratchpad investigation) found PayFast's
+// sandbox environment presents a pre-funded test wallet rather than a raw card-entry form:
+// an optional login/OTP gate (skip it), then a wallet balance with a "Complete Payment"
+// button. Returns the order_id captured from the return-redirect URL (which the site's own
+// checkout.js reads via `?payment=success&order_id=...`), or null if the flow didn't reach
+// the expected return state within the timeout.
+export async function completePayFastSandboxPayment(page: Page): Promise<string | null> {
+  const skipBtn = page.locator('button:has-text("Skip")').first();
+  if (await skipBtn.isVisible({ timeout: 5_000 }).catch(() => false)) {
+    await skipBtn.click();
+  }
+
+  const walletBtn = page.locator('#pay-with-wallet');
+  await walletBtn.waitFor({ state: 'visible', timeout: 15_000 });
+  await Promise.all([
+    page.waitForNavigation({ timeout: 30_000 }).catch(() => null),
+    walletBtn.click(),
+  ]);
+
+  // PayFast's "finish" page auto-redirects back to the merchant after a few seconds.
+  // Poll page.url() rather than waitForURL — observed in practice that the redirect can
+  // complete without a clean 'navigation' event firing that waitForURL reliably catches,
+  // even though the browser has genuinely already arrived at the target URL.
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline && !page.url().includes('juelhaus.co.za')) {
+    await page.waitForTimeout(500);
+  }
+  if (!page.url().includes('juelhaus.co.za')) {
+    throw new Error(`completePayFastSandboxPayment: did not return to juelhaus.co.za within 20s — stuck on "${page.url()}"`);
+  }
+
+  // page.url() updates as soon as the navigation is committed — well before the page's
+  // DOMContentLoaded handler (which reads ?payment=success and renders #checkout-step-done
+  // via showPayFastReturn) has actually run. Wait for load to settle before returning.
+  await page.waitForLoadState('load').catch(() => {});
+  await page.locator('#checkout-step-done').waitFor({ state: 'visible', timeout: 8_000 }).catch(() => {});
+
+  const url = new URL(page.url());
+  return url.searchParams.get('order_id');
+}
+
+export interface OrderDocResult {
+  exists: boolean | null;
+  data: Record<string, unknown> | null;
+  error: string | null;
+}
+
+// Reads the raw Firestore order document directly, bypassing the admin UI entirely.
+// Diagnostic use confirmed this is the reliable way to verify PayFast's payment
+// notification (ITN) actually reached the backend: it writes payfastStatus /
+// payfastTransactionId / paidAt onto the order doc almost immediately after payment,
+// completely independent of the fulfilment `status` field (Pending/Assembling/...),
+// which only ever changes via manual admin action and is unrelated to payment
+// confirmation. Requires the current page to be authenticated with sufficient
+// Firestore read access to the order (e.g. as admin, or as the order's own owner).
+export async function readOrderDocument(page: Page, orderId: string): Promise<OrderDocResult> {
+  return page.evaluate(async (id) => {
+    try {
+      // @ts-expect-error — runs in the browser; resolved at runtime, not by tsc.
+      const dbMod = await import('/js/firebase-config.js');
+      // @ts-expect-error — runs in the browser; resolved at runtime via CDN, not by tsc.
+      const fsMod = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js');
+      const snap = await fsMod.getDoc(fsMod.doc(dbMod.db, 'orders', id));
+      return { exists: snap.exists(), data: snap.exists() ? snap.data() : null, error: null };
+    } catch (e: any) {
+      return { exists: null, data: null, error: e?.message ?? String(e) };
+    }
+  }, orderId);
+}
+
+export interface PayFastCallResult {
+  success: boolean;
+  data?: { actionUrl: string; params: Array<{ name: string; value: string }> };
+  code?: string;
+  message?: string;
+}
+
+// Calls the createPayFastPayment Cloud Function directly — the exact call the site's own
+// checkout.js makes (see redirectToPayFast in js/checkout.js: httpsCallable(getFunctions
+// (undefined, 'europe-west1'), 'createPayFastPayment')({orderId, origin, firstName,
+// lastName})) — bypassing the UI entirely. Used to probe the callable's own server-side
+// authorization/state checks directly, independent of what the client UI does or doesn't
+// enforce. The current page must already have the default Firebase app initialised (true
+// on any normal page after firebase-config.js has run). Errors are caught and returned as
+// data rather than thrown, since page.evaluate() would otherwise lose the structured
+// `.code` property Firebase callable errors carry.
+export async function callCreatePayFastPayment(
+  page: Page,
+  payload: { orderId: string; origin?: string; firstName?: string; lastName?: string },
+): Promise<PayFastCallResult> {
+  return page.evaluate(async (p) => {
+    try {
+      // @ts-expect-error — runs in the browser; module is resolved at runtime via CDN, not by tsc.
+      const fnsMod = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-functions.js');
+      const fns = fnsMod.getFunctions(undefined, 'europe-west1');
+      const result = await fnsMod.httpsCallable(fns, 'createPayFastPayment')(p);
+      return { success: true, data: result.data };
+    } catch (e: any) {
+      return { success: false, code: e?.code, message: e?.message };
+    }
+  }, {
+    orderId: payload.orderId,
+    origin: payload.origin ?? '',
+    firstName: payload.firstName ?? '',
+    lastName: payload.lastName ?? '',
+  });
 }
