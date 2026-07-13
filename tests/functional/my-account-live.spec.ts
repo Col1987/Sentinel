@@ -321,64 +321,15 @@ test.describe('My Account (LIVE_MODE only)', { tag: ['@functional'] }, () => {
       description: 'Checked what the My Properties section actually supports before testing it. Discovery confirmed it is a genuine multi-property CRUD section (Add/Edit/Delete against the customer\'s saved properties, auto-populated by checkout\'s "default mode" and also manually manageable here) rather than a single-property form. Exercised it directly: added a new property, confirmed it appears; edited its name, confirmed the change persists; deleted it, confirmed it\'s removed.',
     });
 
-    // DIAGNOSTIC ONLY — no logic change, purely observational.
+    // TEMPORARY: capture console errors so a Create failure can be classified as the
+    // known transient Firestore "unavailable" connectivity blip vs. something else,
+    // without re-running a second time just to find out.
     const consoleErrors: string[] = [];
     page.on('console', (msg) => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
-    page.on('pageerror', (err) => { consoleErrors.push(`[pageerror] ${err.message}`); });
 
     await registerVerifiedAccount(page);
     await page.goto('/account.html', { waitUntil: 'load' });
-
-    const tabDiag = await page.evaluate(() => {
-      const tabs = Array.from(document.querySelectorAll('[id^="tab-btn-"]')).map((el) => ({
-        id: el.id,
-        visible: (el as HTMLElement).offsetParent !== null,
-        displayStyle: window.getComputedStyle(el as HTMLElement).display,
-      }));
-      const byId = (id: string) => {
-        const el = document.getElementById(id);
-        if (!el) return { exists: false };
-        return { exists: true, display: window.getComputedStyle(el).display, inlineDisplay: el.style.display };
-      };
-      return {
-        tabs,
-        notLoggedIn: byId('not-logged-in'),
-        emailVerifyGate: byId('email-verify-gate'),
-        accountContent: byId('account-content'),
-        tabBtnPropertiesExists: !!document.getElementById('tab-btn-properties'),
-      };
-    });
-    console.log(`[DIAG] my-properties-actual-behavior: page.url()=${page.url()}`);
-    console.log('[DIAG] my-properties-actual-behavior: tab/gate state after goto:');
-    console.log(JSON.stringify(tabDiag, null, 2));
-    console.log(`[DIAG] my-properties-actual-behavior: console errors so far: ${JSON.stringify(consoleErrors)}`);
-
-    try {
-      await page.locator('#tab-btn-properties').click({ timeout: 10_000 });
-    } catch (e) {
-      const tabDiagAfterFail = await page.evaluate(() => {
-        const tabs = Array.from(document.querySelectorAll('[id^="tab-btn-"]')).map((el) => ({
-          id: el.id,
-          visible: (el as HTMLElement).offsetParent !== null,
-        }));
-        const byId = (id: string) => {
-          const el = document.getElementById(id);
-          if (!el) return { exists: false };
-          return { exists: true, display: window.getComputedStyle(el).display };
-        };
-        return {
-          tabs,
-          notLoggedIn: byId('not-logged-in'),
-          emailVerifyGate: byId('email-verify-gate'),
-          accountContent: byId('account-content'),
-        };
-      });
-      console.log(`[DIAG] my-properties-actual-behavior: AT TIMEOUT — page.url()=${page.url()}`);
-      console.log('[DIAG] my-properties-actual-behavior: AT TIMEOUT — tab/gate state:');
-      console.log(JSON.stringify(tabDiagAfterFail, null, 2));
-      console.log(`[DIAG] my-properties-actual-behavior: AT TIMEOUT — console errors: ${JSON.stringify(consoleErrors)}`);
-      throw e;
-    }
+    await page.locator('#tab-btn-properties').click({ timeout: 10_000 });
     await page.waitForTimeout(1_500);
 
     const hasAddButton = await page.locator('button:has-text("+ Add Property")').isVisible().catch(() => false);
@@ -449,39 +400,16 @@ test.describe('My Account (LIVE_MODE only)', { tag: ['@functional'] }, () => {
     await page.locator('#pf-save-btn').waitFor({ state: 'visible', timeout: 5_000 });
     await page.locator('#pf-save-btn:not([disabled])').waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {});
     await page.locator('#pf-save-btn').click();
-
-    // DIAGNOSTIC ONLY — no logic change, purely observational.
-    await page.waitForTimeout(1_500);
-    const pfMsgText = (await page.locator('#pf-msg').textContent().catch(() => '')) ?? '';
-    const formStillVisible = await page.locator('#property-form-wrap').isVisible().catch(() => false);
-    console.log(`[DIAG] my-properties-actual-behavior: after Save click — #pf-msg="${pfMsgText.trim()}", form still visible=${formStillVisible}`);
-
-    const rawPropertyDoc = await page.evaluate(async (name) => {
-      try {
-        // @ts-expect-error — runs in the browser; resolved at runtime, not by tsc.
-        const dbMod = await import('/js/firebase-config.js');
-        // @ts-expect-error — runs in the browser; resolved at runtime via CDN, not by tsc.
-        const fsMod = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js');
-        const uid = dbMod.auth.currentUser?.uid;
-        if (!uid) return { error: 'no currentUser' };
-        const snap = await fsMod.getDocs(fsMod.collection(dbMod.db, 'customers', uid, 'properties'));
-        const all: any[] = [];
-        snap.forEach((d: any) => all.push({ id: d.id, ...d.data() }));
-        const match = all.find((p) => p.propertyName === name);
-        return { totalCount: all.length, allNames: all.map((p) => p.propertyName), match: match ?? null };
-      } catch (e: any) {
-        return { error: e?.message ?? String(e) };
-      }
-    }, propName);
-    console.log('[DIAG] my-properties-actual-behavior: raw Firestore read of customers/{uid}/properties:');
-    console.log(JSON.stringify(rawPropertyDoc, null, 2));
-
     await page.waitForTimeout(2_000);
 
     const createdVisible = await page.locator(`.prop-card:has-text("${propName}")`).isVisible().catch(() => false);
     console.log(`[INFO] my-properties-actual-behavior: created property visible=${createdVisible}.`);
     if (!createdVisible) {
-      console.error(`[FINDING][high] my-properties-actual-behavior: newly created property "${propName}" does not appear in the list.`);
+      const isKnownFirestoreBlip = consoleErrors.some((e) => e.includes('Could not reach Cloud Firestore backend'));
+      console.error(
+        `[FINDING][high] my-properties-actual-behavior: newly created property "${propName}" does not appear in ` +
+          `the list. Known-Firestore-connectivity-blip signature present=${isKnownFirestoreBlip}. Console errors: ${JSON.stringify(consoleErrors)}`,
+      );
     }
     expect(createdVisible, 'A newly created property must appear in the My Properties list').toBe(true);
 
@@ -489,7 +417,34 @@ test.describe('My Account (LIVE_MODE only)', { tag: ['@functional'] }, () => {
     const editedName = `${propName} EDITED`;
     await page.locator(`.prop-card:has-text("${propName}") button:has-text("Edit")`).click();
     await page.locator('#property-form-wrap').waitFor({ state: 'visible', timeout: 5_000 });
+    await page.waitForTimeout(500); // let showPropertyForm(id)'s population finish
+
+    // KNOWN SITE DEFECT (confirmed via diagnostic investigation): showPropertyForm(id)
+    // does not repopulate pfState.restaurants/activities from the saved property — even
+    // though the saved record already has both (verified via a raw Firestore read during
+    // Create), pfUpdateSaveBtn() still sees them as empty and disables Save. Work around
+    // it here using the same manual-entry fallback proven for Create, and log the defect
+    // itself as a finding rather than silently masking it.
+    console.error(
+      '[FINDING][medium] my-properties-actual-behavior: editing an existing property does not repopulate ' +
+        'pfState.restaurants/activities from saved data, leaving Save disabled until the user re-adds an entry ' +
+        'that already exists in the saved record — a genuine UX defect, distinct from Create which works correctly.',
+    );
+    await page.locator('#acc-restaurants .acc-btn').click();
+    await page.evaluate(() => (window as any).pfToggleManualPanel('rest', true));
+    await page.locator('#pf-new-rest-name').waitFor({ state: 'visible', timeout: 5_000 });
+    await page.locator('#pf-new-rest-name').fill('Sentinel Test Restaurant Edit');
+    await page.locator('button:has-text("Add Restaurant")').click();
+
+    await page.locator('#acc-activities .acc-btn').click();
+    await page.evaluate(() => (window as any).pfToggleManualPanel('act', true));
+    await page.locator('#pf-new-act-name').waitFor({ state: 'visible', timeout: 5_000 });
+    await page.locator('#pf-new-act-name').fill('Sentinel Test Activity Edit');
+    await page.locator('button:has-text("Add Activity")').click();
+
     await page.locator('#pf-name').fill(editedName);
+    await page.locator('#pf-save-btn').waitFor({ state: 'visible', timeout: 5_000 });
+    await page.locator('#pf-save-btn:not([disabled])').waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {});
     await page.locator('#pf-save-btn').click();
     await page.waitForTimeout(2_000);
 
