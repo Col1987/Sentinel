@@ -157,10 +157,23 @@ export async function fillConfigStep(
   await setDateField(page, 'cfg-checkin',  CHECKIN);
   await setDateField(page, 'cfg-checkout', CHECKOUT_DATE);
 
+  await advanceConfigSubSteps(page, wifiConfig);
+}
+
+// Loops through whatever config sub-steps remain (Wi-Fi, branding, house rules, etc.)
+// until the delivery step appears. Extracted from fillConfigStep so a caller that reaches
+// this same point by a different path — e.g. selecting a saved property from checkout's
+// property chooser instead of typing fresh details — can reuse the identical handling
+// rather than duplicating it. Pass wifiConfig to fill in Wi-Fi credentials (overriding
+// whatever a selected saved property pre-filled); omit to click "Continue Without Wi-Fi".
+export async function advanceConfigSubSteps(
+  page: Page,
+  wifiConfig?: { ssid: string; password: string },
+): Promise<void> {
   const deadline = Date.now() + 90_000;
   while (Date.now() < deadline) {
     if (await page.locator('button:has-text("Proceed to Payment →")').isVisible({ timeout: 1_000 }).catch(() => false)) {
-      console.log('[INFO] fillConfigStep: reached delivery step ✓');
+      console.log('[INFO] advanceConfigSubSteps: reached delivery step ✓');
       return;
     }
     const wifiSkip = page.locator('button:has-text("Continue Without Wi-Fi")');

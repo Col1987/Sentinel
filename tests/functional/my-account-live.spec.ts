@@ -1,13 +1,13 @@
 import { test, expect, type Page } from '@playwright/test';
 import { LIVE_MODE } from '../../src/config/sites';
 import { loginAsAdmin } from '../../src/utils/auth';
-import { getLatestVerificationEmail } from '../../src/utils/gmail';
 import {
   ADDR,
-  registerForCheckout, addPackAndGoToCheckout, fillConfigStep,
+  addPackAndGoToCheckout, fillConfigStep,
   advanceThroughDeliveryToPayment, submitPaymentAndCapture, readOrderDocument,
 } from './checkout-helpers';
 import { findAndOpenOrderInAdmin, clickAdvanceStatus, STATUS_STAGES } from './order-lifecycle-helpers';
+import { registerVerifiedAccount, createSavedProperty } from './account-helpers';
 
 // Discovery findings (see live runs against /account.html with a real, email-verified
 // account) that shaped this file:
@@ -28,21 +28,6 @@ import { findAndOpenOrderInAdmin, clickAdvanceStatus, STATUS_STAGES } from './or
 //    direct client-side Firestore write — matches the same server-enforced pattern as
 //    createPayFastPayment.
 //  - Deleting a property uses the browser's native confirm() dialog, not a custom modal.
-
-// Registers a fresh account and verifies its email via the proven Gmail-polling pattern —
-// account.html will not render its authenticated tabs for an unverified account.
-async function registerVerifiedAccount(page: Page): Promise<string> {
-  const sentAfter = new Date();
-  const checkoutEmail = await registerForCheckout(page);
-  const verificationLink = await getLatestVerificationEmail(sentAfter);
-  if (!verificationLink) {
-    throw new Error('registerVerifiedAccount: verification email did not arrive within 30s — cannot proceed with an unverified account.');
-  }
-  await page.goto(verificationLink, { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(1_000);
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
-  return checkoutEmail;
-}
 
 // Registers, verifies, and completes a full checkout — leaving a real Pending order under
 // a verified account. registerForCheckout's own flow naturally spends several seconds on
@@ -345,62 +330,7 @@ test.describe('My Account (LIVE_MODE only)', { tag: ['@functional'] }, () => {
 
     // ── Create ─────────────────────────────────────────────────────────────
     const propName = `Sentinel MyProps Test ${Date.now()}`;
-    await page.locator('button:has-text("+ Add Property")').click();
-    await page.locator('#property-form-wrap').waitFor({ state: 'visible', timeout: 5_000 });
-
-    await page.locator('#pf-name').fill(propName);
-    await page.locator('#pf-address').fill(`${ADDR.unit} ${ADDR.street}, ${ADDR.suburb}, ${ADDR.city}`);
-    const streetAlreadyVisible = await page.locator('#pf-addr-street').isVisible({ timeout: 500 }).catch(() => false);
-    if (!streetAlreadyVisible) {
-      await page.locator('#pf-addr-breakdown-btn').click();
-      await page.locator('#pf-addr-street').waitFor({ state: 'visible', timeout: 6_000 }).catch(() => {});
-    }
-    await page.locator('#pf-addr-unit').fill(ADDR.unit).catch(() => {});
-    await page.locator('#pf-addr-street').fill(ADDR.street).catch(() => {});
-    await page.locator('#pf-addr-suburb').fill(ADDR.suburb).catch(() => {});
-    await page.locator('#pf-addr-city').fill(ADDR.city).catch(() => {});
-    await page.locator('#pf-addr-province').fill(ADDR.province).catch(() => {});
-    await page.locator('#pf-addr-postal').fill(ADDR.postal).catch(() => {});
-
-    // Host Contact lives inside a collapsed accordion section (#acc-host) — only the
-    // Property Details section (#acc-basic) is open by default. Expand it before filling.
-    const hostFieldVisible = await page.locator('#pf-host-name').isVisible({ timeout: 500 }).catch(() => false);
-    if (!hostFieldVisible) {
-      await page.locator('#acc-host .acc-btn').click();
-      await page.locator('#pf-host-name').waitFor({ state: 'visible', timeout: 6_000 }).catch(() => {});
-    }
-    await page.locator('#pf-host-name').fill('SENTINEL HOST');
-    await page.locator('#pf-host-phone-num').fill('821234567');
-
-    // pfUpdateSaveBtn() also requires at least one restaurant AND one activity before
-    // Save enables (this exact test address is already known, from discovery, to return
-    // zero real nearby results). Use the manual-entry fallback directly rather than
-    // depending on a live external geocoding search (OpenStreetMap/Overpass) in a test.
-    await page.locator('#acc-restaurants .acc-btn').click();
-    await page.evaluate(() => (window as any).pfToggleManualPanel('rest', true));
-    await page.locator('#pf-new-rest-name').waitFor({ state: 'visible', timeout: 5_000 });
-    await page.locator('#pf-new-rest-name').fill('Sentinel Test Restaurant');
-    await page.locator('button:has-text("Add Restaurant")').click();
-
-    await page.locator('#acc-activities .acc-btn').click();
-    await page.evaluate(() => (window as any).pfToggleManualPanel('act', true));
-    await page.locator('#pf-new-act-name').waitFor({ state: 'visible', timeout: 5_000 });
-    await page.locator('#pf-new-act-name').fill('Sentinel Test Activity');
-    await page.locator('button:has-text("Add Activity")').click();
-
-    // saveProperty() also requires a Business / Brand name — lives inside the collapsed
-    // Brand accordion section (#acc-brand), same pattern as Host Contact above.
-    const brandFieldVisible = await page.locator('#pf-brand').isVisible({ timeout: 500 }).catch(() => false);
-    if (!brandFieldVisible) {
-      await page.locator('#acc-brand .acc-btn').click();
-      await page.locator('#pf-brand').waitFor({ state: 'visible', timeout: 6_000 }).catch(() => {});
-    }
-    await page.locator('#pf-brand').fill('Sentinel Test Brand');
-
-    await page.locator('#pf-save-btn').waitFor({ state: 'visible', timeout: 5_000 });
-    await page.locator('#pf-save-btn:not([disabled])').waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {});
-    await page.locator('#pf-save-btn').click();
-    await page.waitForTimeout(2_000);
+    await createSavedProperty(page, propName);
 
     const createdVisible = await page.locator(`.prop-card:has-text("${propName}")`).isVisible().catch(() => false);
     console.log(`[INFO] my-properties-actual-behavior: created property visible=${createdVisible}.`);
