@@ -29,7 +29,13 @@ export async function registerVerifiedAccount(page: Page): Promise<string> {
 // live, not documented anywhere: name, address, Host Contact (collapsed accordion), at
 // least one restaurant and one activity (manual-entry fallback — this address is known to
 // return zero real nearby results), and Business/Brand name (also a collapsed accordion).
-export async function createSavedProperty(page: Page, propName: string): Promise<void> {
+export async function createSavedProperty(
+  page: Page,
+  propName: string,
+  opts: { restaurantName?: string; activityName?: string } = {},
+): Promise<void> {
+  const restaurantName = opts.restaurantName ?? 'Sentinel Test Restaurant';
+  const activityName   = opts.activityName   ?? 'Sentinel Test Activity';
   await page.locator('button:has-text("+ Add Property")').click();
   await page.locator('#property-form-wrap').waitFor({ state: 'visible', timeout: 5_000 });
 
@@ -96,13 +102,13 @@ export async function createSavedProperty(page: Page, propName: string): Promise
   await page.locator('#acc-restaurants .acc-btn').click();
   await page.evaluate(() => (window as any).pfToggleManualPanel('rest', true));
   await page.locator('#pf-new-rest-name').waitFor({ state: 'visible', timeout: 5_000 });
-  await page.locator('#pf-new-rest-name').fill('Sentinel Test Restaurant');
+  await page.locator('#pf-new-rest-name').fill(restaurantName);
   await page.locator('button:has-text("Add Restaurant")').click();
 
   await page.locator('#acc-activities .acc-btn').click();
   await page.evaluate(() => (window as any).pfToggleManualPanel('act', true));
   await page.locator('#pf-new-act-name').waitFor({ state: 'visible', timeout: 5_000 });
-  await page.locator('#pf-new-act-name').fill('Sentinel Test Activity');
+  await page.locator('#pf-new-act-name').fill(activityName);
   await page.locator('button:has-text("Add Activity")').click();
 
   // saveProperty() also requires a Business / Brand name — lives inside the collapsed
