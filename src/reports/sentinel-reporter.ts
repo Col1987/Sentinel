@@ -292,7 +292,8 @@ function escapeHtml(str: string): string {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function formatDuration(ms: number): string {
@@ -418,7 +419,7 @@ function renderRuleGroup(message: string, groupFindings: AuditFinding[]): string
     <details>
       <summary class="rule-summary" style="border-left-color:${colour};background:${bg}">
         <div class="summary-left">
-          <span class="sev-badge" style="background:${colour}">${severity}</span>
+          <span class="sev-badge" style="background:${colour}">${escapeHtml(severity)}</span>
           <span class="rule-title">${escapeHtml(message)}</span>
         </div>
         <span class="summary-count">${count} instance${count === 1 ? '' : 's'} &#8250;</span>
@@ -645,7 +646,7 @@ function renderSecuritySection(findings: FindingRecord[]): string {
     const rows = sorted.map(f => {
       const c = SEV_COLOUR[f.severity];
       return `<div class="security-group-row">
-        <span class="sev-badge" style="background:${c}">${f.severity}</span>
+        <span class="sev-badge" style="background:${c}">${escapeHtml(f.severity)}</span>
         <span class="finding-msg">${escapeHtml(f.message)}</span>
       </div>`;
     }).join('');
@@ -654,7 +655,7 @@ function renderSecuritySection(findings: FindingRecord[]): string {
       <details>
         <summary class="rule-summary" style="border-left-color:${colour};background:${bg}">
           <div class="summary-left">
-            <span class="sev-badge" style="background:${colour}">${highestSev}</span>
+            <span class="sev-badge" style="background:${colour}">${escapeHtml(highestSev)}</span>
             <span class="rule-title">${escapeHtml(readableTitle)}</span>
           </div>
           <span class="summary-count">${count} finding${count === 1 ? '' : 's'} &#8250;</span>
