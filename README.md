@@ -196,6 +196,12 @@ In live mode (`SENTINEL_LIVE_MODE=true`), requests pass through to real backends
 
 GitHub Actions runs the audit suite on every push to main and on a daily cron schedule. Reports are uploaded as build artifacts. The pipeline uses a single worker to avoid resource contention in CI.
 
+### Nightly regression (LIVE_MODE)
+
+`.github/workflows/nightly-regression.yml` runs the `regression` project against the real backend once daily at 02:00 UTC (off-peak), plus `workflow_dispatch` for manual triggering on demand. Unlike the safe-mode `audit.yml` pipeline, this workflow sets `SENTINEL_LIVE_MODE=true` — it creates real sandbox orders, sends real login attempts, and polls a real Gmail inbox for verification emails, exercising the full checkout → order lifecycle → email flow end-to-end. `--workers=1` is passed explicitly (matching what `playwright.config.ts` already forces whenever `SENTINEL_LIVE_MODE` is `true`), since concurrent workers logging into the same real admin account causes session/UI-state races. Generated reports are uploaded as a workflow artifact, retrievable from the Actions run summary without needing local access.
+
+This workflow requires the following secrets to be configured under the repo's **Settings → Secrets and variables → Actions** before it will run successfully: `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`. Without them, the regression suite's admin-login and Gmail-polling helpers will throw immediately (`loginAsAdmin`, `getLatestVerificationEmail`) rather than running with blank credentials.
+
 ## Development approach
 
 This project was built using a CLAUDE.md-driven workflow with Claude Code in VS Code for implementation and Claude (chat) for architectural design, test planning, and code review. The CLAUDE.md file in the project root provides Claude Code with the project context, conventions, and hard rules it needs to produce consistent output.

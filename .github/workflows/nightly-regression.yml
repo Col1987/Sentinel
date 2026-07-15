@@ -1,0 +1,47 @@
+name: Sentinel Nightly Regression (LIVE_MODE)
+
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run regression suite (LIVE_MODE)
+        # --workers=1 is passed explicitly here even though playwright.config.ts already
+        # forces workers: 1 whenever SENTINEL_LIVE_MODE is 'true' (and separately whenever
+        # CI is set, which GitHub Actions sets automatically) — both conditions already
+        # apply in this job, so this flag is a confirmation, not a behavior change. Multiple
+        # parallel workers logging into the same real admin account causes session/UI-state
+        # races (see CLAUDE.md "Never run LIVE_MODE tests with multiple parallel workers").
+        run: npx playwright test --project=regression --workers=1
+        env:
+          SENTINEL_LIVE_MODE: 'true'
+          ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+          GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
+          GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
+          GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sentinel-nightly-regression-${{ github.run_number }}
+          path: reports/*.html
+          retention-days: 30
