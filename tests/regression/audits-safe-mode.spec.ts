@@ -2,6 +2,7 @@ import { test } from '@playwright/test';
 import { auditAccessibility } from '../../src/auditors/accessibility';
 import { auditSeo } from '../../src/auditors/seo';
 import { auditCodeQuality } from '../../src/auditors/code-quality';
+import { auditApiKeyExposure } from '../../src/auditors/api-key-exposure';
 import { defaultSite } from '../../src/config/sites';
 import type { AuditResult } from '../../src/auditors/types';
 
@@ -76,6 +77,17 @@ test.describe('Safe-mode auditors', { tag: ['@regression'] }, () => {
     const result = await auditCodeQuality(page, Array.from(AUDIT_PATHS), defaultSite.baseUrl);
     await testInfo.attach('audit-result', { contentType: 'application/json', body: Buffer.from(JSON.stringify(result, null, 2)) });
     logFindings('code-quality-audit-safe-mode', result);
+  });
+
+  test('api-key-exposure-audit-safe-mode — secret API key exposure checks across all known public pages', async ({ page }, testInfo) => {
+    testInfo.annotations.push({
+      type: 'description',
+      description: 'Ran the API key exposure auditor (Anthropic, OpenAI, Stripe, AWS, Supabase service role, generic Bearer token) across all known public pages in forced safe mode. Matched values are redacted in the report.',
+    });
+
+    const result = await auditApiKeyExposure(page, Array.from(AUDIT_PATHS), defaultSite.baseUrl);
+    await testInfo.attach('audit-result', { contentType: 'application/json', body: Buffer.from(JSON.stringify(result, null, 2)) });
+    logFindings('api-key-exposure-audit-safe-mode', result);
   });
 
 });

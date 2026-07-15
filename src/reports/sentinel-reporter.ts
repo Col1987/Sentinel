@@ -256,6 +256,37 @@ const RULE_GUIDANCE: Record<string, Guidance> = {
     why: 'AI tools use placeholder content (Lorem ipsum, test@test.com, John Doe, TODO, FIXME) when generating UI components before real content is available. This placeholder text is often never replaced and ships to production, appearing in visible page text, email notifications, invoice templates, and client-facing documents. Placeholder emails (test@test.com) in forms route real submissions to non-existent addresses. TODO and FIXME annotations in visible text indicate incomplete features shipped prematurely.',
     fix: 'Search page body text for each flagged placeholder and replace with real content or remove the element if the content is not yet available. Establish a pre-deployment checklist that includes a text search for common placeholder strings. For TODO and FIXME items, resolve the underlying task or remove the annotation from user-visible text — these belong in code comments, not in rendered output.',
   },
+
+  // ── API key exposure rules ─────────────────────────────────────────────────
+
+  'api-key-anthropic': {
+    why: 'An Anthropic API key grants full access to make Claude API calls billed to the key owner\'s account. If it appears in any browser-downloadable file — HTML, an inline script, or an external script — any visitor can copy it from DevTools and use it to run unlimited paid requests against the owner\'s account, exfiltrate data the key has access to, or exhaust rate limits and quotas that legitimate application traffic depends on.',
+    fix: 'Remove the key from all client-side code immediately and rotate it in the Anthropic Console — a key that has ever been exposed client-side must be treated as compromised even after removal, since it may already be cached, logged, or archived elsewhere. Move all Claude API calls to a server-side endpoint (a Cloud Function, API route, or backend service) that holds the key in an environment variable and proxies requests on the client\'s behalf. The browser must never hold anything more privileged than a short-lived, scoped session token issued by your own backend.',
+  },
+  'api-key-openai': {
+    why: 'An OpenAI secret key (standard or project-scoped) authorises billed API usage against the owner\'s account. Exposure in client-accessible code lets any visitor extract it and make unlimited requests at the account\'s expense, potentially reaching spend limits, exhausting quota needed by the real application, or using the account for abuse that could get the underlying OpenAI account suspended.',
+    fix: 'Remove the key from all client-side code and rotate it immediately in the OpenAI dashboard — treat any client-exposed key as compromised regardless of how briefly it was visible. All OpenAI API calls must be made from a server-side environment that reads the key from a secret store or environment variable, never from code shipped to the browser.',
+  },
+  'api-key-stripe-live': {
+    why: 'A Stripe LIVE secret key can create real charges, issue refunds, access real customer payment data, and manage the account\'s actual money. This is the single most damaging credential category this auditor checks for — exposure in client-accessible code gives any visitor the ability to move real funds or read real customer payment information immediately, with no further steps required.',
+    fix: 'Rotate the key in the Stripe Dashboard immediately — this is not optional or lower-priority than other findings. Stripe secret keys (as opposed to publishable keys, which are designed to be client-visible) must only ever be used in server-side code that creates PaymentIntents, processes webhooks, or manages the account via the Stripe API. The client should only ever hold a publishable key (pk_live_...) or a short-lived client secret returned by your own server for a specific payment.',
+  },
+  'api-key-stripe-test': {
+    why: 'A Stripe TEST secret key cannot move real money, but its presence in client-accessible code indicates the same architectural mistake that would be catastrophic with a live key: payment-related secret keys are being handled in code paths that ship to the browser. This is a strong signal the equivalent live key follows the same pattern, or will once the site goes to production.',
+    fix: 'Remove the test key from client-side code and move all Stripe API calls (test or live) to server-side code, exactly as required for a live key. Treat this as an early warning to audit the checkout implementation before the live key is introduced, not as a lower-severity issue to defer.',
+  },
+  'api-key-aws': {
+    why: 'An exposed AWS access key ID (paired with its secret, which is often nearby in the same config or code) can grant access to S3 buckets, databases, compute resources, or any other AWS service the underlying IAM identity is permitted to reach — depending on its permissions, this can mean reading or deleting production data, spinning up billed resources, or full account compromise.',
+    fix: 'Deactivate the access key in the AWS IAM console immediately and issue a new one — do not wait to confirm exploitation before rotating. Client-side code must never hold long-lived AWS credentials. Use short-lived, scoped credentials issued via AWS Cognito Identity Pools or STS for any AWS access genuinely needed from the browser, and keep all other AWS operations server-side.',
+  },
+  'api-key-supabase-service-role': {
+    why: 'The Supabase service_role key bypasses Row Level Security entirely, granting full read/write access to every table in the database regardless of the RLS policies configured for normal users. This is fundamentally different from the anon/public key, which is designed to be client-visible. A service_role key in client-accessible code means any visitor has unrestricted database access — they can read every user\'s data, modify any record, or delete entire tables.',
+    fix: 'Rotate the service_role key in the Supabase project settings immediately. Only the anon (public) key belongs in client-side code — RLS policies are what make that safe. Any operation that genuinely requires bypassing RLS (admin actions, background jobs, server-side aggregation) must run in a server-side environment (an Edge Function, a backend API route) that holds the service_role key as a server-only environment variable.',
+  },
+  'api-key-bearer-token': {
+    why: 'A hardcoded "Bearer sk-..." value inside a fetch/XHR call means a secret API key is being attached directly to outgoing requests from browser-executed code — the key is fully readable in the script source and in the Network tab\'s request headers for every visitor, regardless of which provider issued it.',
+    fix: 'Move whatever API call this Authorization header belongs to into a server-side proxy endpoint. The browser should call your own backend (with no secret attached, or with a session token your backend issues), and your backend should attach the real provider key when it makes the actual upstream request.',
+  },
 };
 
 const AUDITOR_DESCRIPTIONS: Record<string, string> = {
@@ -264,6 +295,7 @@ const AUDITOR_DESCRIPTIONS: Record<string, string> = {
   'seo':           'Checks page titles, meta descriptions, heading hierarchy, Open Graph tags, canonical URLs, lang attributes, and image alt text across all pages.',
   'accessibility': 'Runs axe-core WCAG 2 AA compliance checks across all public pages, testing colour contrast, landmarks, labels, and semantic structure.',
   'code-quality':  'Detects common patterns in AI-generated code: duplicate element IDs, event handler attributes referencing undefined functions, and form elements with no submission mechanism.',
+  'api-key-exposure': 'Scans raw page HTML, inline scripts, and same-origin external scripts for exposed secret API keys — Anthropic, OpenAI, Stripe, AWS, and Supabase — that must only ever exist in server-side environment variables.',
 };
 
 const DEFAULT_GUIDANCE: Guidance = {
