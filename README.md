@@ -217,6 +217,18 @@ Key design decisions:
 - **Test cost awareness.** Before repeating an expensive operation (a full checkout flow, a full registration) across multiple variations, prefer cheap direct data verification over repeating the expensive flow when only the data differs, not the mechanism. When the full flow must be repeated, a representative sample is usually sufficient over exhaustive repetition. Parallel execution is a deliberate choice weighed against resource/rate-limit risk, not a default speed fix.
 - **Debugging circuit breaker.** If a single test requires more than 2 consecutive live-debugging patches in one session without reaching a clean pass, the file is reverted to its last known-good commit and rewritten fresh in a later session, rather than continuing to chase the failure live. Repeated live-patching under pressure is a proven way to burn significant time chasing a hang one symptom at a time.
 
+### Post-debugging diff review
+
+`npm run review` (`scripts/review-diff.ts`) is a lightweight, manually-triggered script for the moment right after a debugging session that involved 2+ live-patch attempts — the exact scenario the circuit breaker above is about. Before building more work on top of a patched file, it sends the diff plus the full text of CLAUDE.md to Claude in a single API call and asks it to flag two things: (a) a change that contradicts or reverts an earlier fix visible elsewhere in the same diff, and (b) a specific CLAUDE.md convention the diff appears to violate, citing the rule. It prints the result to the console — it does not auto-apply anything, does not fail any process, and is not wired into CI or any test run.
+
+```bash
+npm run review                  # git diff HEAD — working tree vs last commit (default)
+npm run review -- HEAD~3        # git diff HEAD~3
+npm run review -- main...HEAD   # any valid git diff ref range
+```
+
+Requires `ANTHROPIC_API_KEY` set in your local `.env` (see `.env.example`) — this is a local developer tool only and the key is never referenced by any GitHub Actions workflow.
+
 ## Roadmap
 
 **Phase 1: Safe-mode framework and reporting (complete)**
