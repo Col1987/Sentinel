@@ -35,7 +35,7 @@ interface FindingRecord {
 
 // Marks a thrown error as a Sentinel-side infrastructure problem (e.g. an expired Gmail
 // OAuth token) rather than a defect in the site under test. See src/utils/gmail.ts.
-const INFRA_ISSUE_MARKER = 'SENTINEL INFRASTRUCTURE ISSUE';
+export const INFRA_ISSUE_MARKER = 'SENTINEL INFRASTRUCTURE ISSUE';
 
 const SEVERITY_ORDER: Severity[] = ['critical', 'high', 'medium', 'low', 'info'];
 
@@ -63,9 +63,9 @@ const SHIELD_SVG = `<svg width="38" height="44" viewBox="0 0 38 44" fill="none" 
 
 // ─── Rule guidance table ──────────────────────────────────────────────────────
 
-interface Guidance { why: string; fix: string }
+export interface Guidance { why: string; fix: string }
 
-const RULE_GUIDANCE: Record<string, Guidance> = {
+export const RULE_GUIDANCE: Record<string, Guidance> = {
   'color-contrast': {
     why: 'Users with low vision, color blindness, or age-related visual decline depend on sufficient contrast to read content. Poor contrast also reduces legibility on mobile screens in bright sunlight and on budget displays used in emerging markets.',
     fix: 'Increase the contrast ratio to at least 4.5:1 for body text and 3:1 for large text (18 pt or 14 pt bold). Use the WebAIM Contrast Checker to find compliant values that still align with your brand palette. The fix is typically a single CSS colour change.',
@@ -298,7 +298,7 @@ const AUDITOR_DESCRIPTIONS: Record<string, string> = {
   'api-key-exposure': 'Scans raw page HTML, inline scripts, and same-origin external scripts for exposed secret API keys — Anthropic, OpenAI, Stripe, AWS, and Supabase — that must only ever exist in server-side environment variables.',
 };
 
-const DEFAULT_GUIDANCE: Guidance = {
+export const DEFAULT_GUIDANCE: Guidance = {
   why: 'This issue was identified by the automated auditor. Review the linked documentation for a detailed explanation of its impact on users and compliance standing.',
   fix: 'Follow the remediation guidance in the documentation link below. If the fix requires interpretation, raise it with your development team alongside this report.',
 };
@@ -341,7 +341,7 @@ function extractOrigin(url: string): string {
   try { return new URL(url).origin; } catch { return url; }
 }
 
-function getGuidance(message: string): Guidance {
+export function getGuidance(message: string): Guidance {
   if (message in RULE_GUIDANCE) return RULE_GUIDANCE[message];
   const m = message.match(/^\[([^\]]+)\]/);
   const ruleId = m?.[1];

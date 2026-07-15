@@ -15,6 +15,7 @@ export default defineConfig({
   reporter: [
     ['list'],
     ['./src/reports/sentinel-reporter.ts'],
+    ['./src/reports/test-case-reporter.ts'],
     ['html', { outputFolder: 'reports/playwright-html', open: 'never' }],
   ],
   use: {
