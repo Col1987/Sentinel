@@ -125,6 +125,7 @@ async function signOutCurrentUser(page: Page): Promise<void> {
       const btn = document.getElementById('btn-login');
       return !!btn && !btn.classList.contains('hidden') && window.getComputedStyle(btn).display !== 'none';
     },
+    undefined,
     { timeout: 15_000 },
   );
 }
@@ -152,6 +153,7 @@ async function adminLogin(page: Page): Promise<void> {
       const style = window.getComputedStyle(overlay);
       return style.display === 'none' || style.visibility === 'hidden' || overlay.classList.contains('hidden');
     },
+    undefined,
     { timeout: 60_000 },
   );
 }
