@@ -93,6 +93,8 @@ Before writing a new fix for a recurring category of problem, check whether this
 
 - **Storage-clearing helpers must verify page origin first**: page.evaluate() targets the current page's origin. If the browser may be on an external domain (e.g. PayFast after payment redirect), navigate to the target origin before calling the storage-clear evaluate, or the clear will target the wrong domain's storage. Check page.url() and call page.goto('/') if needed. See signOutCurrentUser in cart-combinations-live.spec.ts.
 
+- **page.waitForFunction() with a zero-argument function**: waitForFunction(fn, options) is WRONG when fn takes no parameters — Playwright's signature is waitForFunction(fn, arg, options), and a zero-param fn silently accepts the options object AS its arg, leaving the real options (including timeout) unused. This is invisible to TypeScript since a no-param function accepts any arg shape. Always write waitForFunction(fn, undefined, options) for zero-argument functions. Found and fixed at 65 locations across the codebase on 2026-07-16 after this exact bug caused a test to silently run 180s instead of failing fast at its intended timeout.
+
 Add new entries to this list whenever a genuinely reusable fix is found for a category of problem (not a one-off), so future debugging starts from what's already known to work rather than rediscovering it live.
 
 ### Debugging circuit breaker
