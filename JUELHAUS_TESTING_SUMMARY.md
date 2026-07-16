@@ -78,6 +78,7 @@ Across all auditors and probes, **388 individual findings** were logged, of whic
 - Failed-login lockout (which does genuinely work — see Section 5) shows no message to the user; the form just silently stops accepting the correct password
 - Site reuses identical HTML element IDs across multiple cart items in checkout forms, which violates the HTML spec and is the likely root cause of a broken toggle button for any cart item beyond the first
 - Editing an existing saved property leaves the Save button permanently disabled — the edit form does not repopulate its in-memory restaurant/activity state from the saved record, so the button's "at least one restaurant and one activity" requirement is never satisfied unless the user re-adds entries that already exist in the saved data. Creating a new property works correctly; only editing an existing one is affected
+- **The "Get Started" call-to-action is a complete silent no-op for genuine authenticated customers.** For a real, verified, non-admin account, clicking it produces no scroll, no error, and no console warning — nothing happens at all. The site's own code confirms the correct logic branch should run and scroll the page to the Welcome Packs section, but it doesn't. This is the primary conversion action on the homepage for logged-in visitors.
 
 ### Accessibility (WCAG 2.1 AA, via axe-core)
 
@@ -116,6 +117,7 @@ This section inverts the usual structure. Instead of organising by test file or 
 | A destructive admin action happens by accident | No confirmation step before an irreversible change | `pack-delete-confirmation`, `force-override-status-requires-confirmation` | **Mixed** — Force/Override correctly requires confirmation; pack deletion does not |
 | Malicious input crashes a page or executes as code | XSS or SQL-injection-style payloads in any input field | XSS/injection tests across checkout, admin search, order tracking, welcome page | **High** — every tested input handled malicious payloads without executing them |
 | An order ID can be guessed to reach someone else's order | Sequential or near-guessable order references | `order-id-enumeration` | **High** — a real order ID incremented by one character returned no data |
+| A logged-in visitor can't reach the product catalogue from the homepage's primary call-to-action | The "Get Started" button's scroll behaviour silently fails for authenticated customers | `get-started-scrolls-to-packs` | **Low — confirmed happening.** Verified against a real, verified, non-admin customer account: no scroll, no error, no navigation. The site's own code confirms the correct logic should run |
 
 **Reading this table the way it's meant to be read:** four rows say "Low — confirmed happening." Those four are the actual priority list, regardless of what the raw finding count elsewhere in this document might suggest. Everything marked "High" in this table is a genuine, tested, real-evidence confirmation — not an assumption of safety in the absence of a test.
 
@@ -185,7 +187,7 @@ Mapped directly against your original `QA_CHECKLIST.md`, organised by how thorou
 
 ### Partial coverage
 
-- **Storefront** — cart behaviour, multi-item carts, and the Get Started / Proceed to Checkout flows are covered; the chat widget and support-ticket creation are not
+- **Storefront** — cart behaviour and multi-item carts are covered; the Get Started flow uncovered a genuine defect for logged-in customers (see findings above), Proceed to Checkout is covered for the logged-out state; the chat widget and support-ticket creation are not
 - **Cross-cutting** (section 10) — console-error sweeping across all pages is thorough; genuine physical-device testing is not something browser automation can substitute for
 - **Email Infrastructure** (section 11) — the actual delivery, branding, and link-correctness of the verification email is now fully verified end-to-end; the DNS and Resend-provider-level configuration behind it is not directly testable from the browser
 

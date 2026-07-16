@@ -87,4 +87,11 @@ export const RISK_MAP: RiskEntry[] = [
     testPatterns: ['regular-user-blocked-from-admin', 'admin-tabs-without-auth', 'expired-session-handling'],
     confidenceRationale: 'Confirmed by forcibly bypassing the UI-level auth overlay (DOM removal, forced clicks) and verifying the backend — not just the UI — rejects unauthenticated access; a pass means Firestore rules and callable-function auth checks hold independently of client-side gating.',
   },
+  {
+    id: 'broken-homepage-cta',
+    risk: 'A logged-in visitor can\'t reach the product catalogue from the homepage\'s primary call-to-action',
+    couldItHappen: 'The "Get Started" button\'s scroll-to-catalogue behaviour silently fails for authenticated customers — no scroll, no navigation, no console error — even though the site\'s own handleGetStarted() function takes the correct branch for a verified, logged-in user.',
+    testPatterns: ['get-started-scrolls-to-packs'],
+    confidenceRationale: 'This is a known, already-confirmed finding — verified against a real, Gmail-verified, non-admin customer account, not an admin session (an admin session gets redirected away to /admin.html on this click, an unrelated defect that would mask this result). A failing result reflects a genuine, reproducible defect in the site\'s primary conversion CTA, not a flaky measurement.',
+  },
 ];
