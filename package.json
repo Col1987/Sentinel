@@ -10,7 +10,8 @@
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\" \"scripts/**/*.ts\" \"*.ts\"",
     "audit": "playwright test --project=audit",
     "discover": "playwright test --project=audit --grep @discovery",
-    "review": "tsx scripts/review-diff.ts"
+    "review": "tsx scripts/review-diff.ts",
+    "review:commit": "tsx scripts/commit-review.ts"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",

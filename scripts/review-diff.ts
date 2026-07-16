@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import Anthropic from '@anthropic-ai/sdk';
+import { getDiff } from './lib/git-diff';
 
 // Manual, on-demand diff review — not wired into CI, not a test, does not fail any
 // process. Run this after a debugging session that involved 2+ live-patch attempts,
@@ -17,23 +17,10 @@ import Anthropic from '@anthropic-ai/sdk';
 //
 // Requires ANTHROPIC_API_KEY set locally (see .env.example). Never required in CI —
 // this script is not referenced by any GitHub Actions workflow.
-
-const MAX_DIFF_BUFFER = 20 * 1024 * 1024; // 20 MB — generous headroom for a large diff
-
-function getDiff(ref: string): string {
-  try {
-    // execFileSync (no shell) rather than execSync — avoids shell interpolation
-    // entirely, so the ref argument can't be misparsed regardless of its content.
-    return execFileSync('git', ['diff', ref], {
-      cwd: process.cwd(),
-      encoding: 'utf-8',
-      maxBuffer: MAX_DIFF_BUFFER,
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    throw new Error(`git diff ${ref} failed: ${message}`);
-  }
-}
+//
+// Distinct from scripts/commit-review.ts, which is wired into CI (commit-review.yml)
+// and checks a fixed set of vibe-coding failure patterns automatically on every push.
+// This script is manual, conversational-style review against CLAUDE.md's conventions.
 
 function readClaudeMd(): string {
   const claudeMdPath = path.join(process.cwd(), 'CLAUDE.md');

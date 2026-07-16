@@ -224,6 +224,16 @@ GitHub Actions runs the audit suite on every push to main and on a daily cron sc
 
 This workflow requires the following secrets to be configured under the repo's **Settings → Secrets and variables → Actions** before it will run successfully: `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`. Without them, the regression suite's admin-login and Gmail-polling helpers will throw immediately (`loginAsAdmin`, `getLatestVerificationEmail`) rather than running with blank credentials.
 
+### Commit review (AI)
+
+`.github/workflows/commit-review.yml` (`scripts/commit-review.ts`) runs automatically on every push to any branch. It sends the diff of the pushed commit(s) — not the full codebase — to Claude in a single scoped API call, checking for a fixed list of vibe-coding failure patterns: orphaned event handlers, dead forms, hardcoded API keys/credentials, duplicate HTML element IDs, placeholder content left in, `console.log` left in, hardcoded localhost references, comments that don't match the actual code, and suspicious duplicated logic. Findings print to the workflow log with a severity (critical/high/medium/low/info). The check only fails the build (non-zero exit) when a **critical** finding is returned — everything else is informational only and does not block the push. This is one deterministic API call per push, not an autonomous agent: one diff in, one structured JSON verdict out, nothing else.
+
+**Distinct from the code-quality auditor** (`src/auditors/code-quality.ts`, part of the `audit` project — see "Auditors" above): that auditor scans the **deployed** target site's live DOM after the fact — rendered HTML, runtime script behavior. This workflow reviews the **source diff itself, before deployment**, at commit time. The two check some overlapping failure categories from genuinely different vantage points (post-deploy DOM vs. pre-deploy source); neither replaces the other, and running both is intentional, not redundant.
+
+**Scope limitation — read this before trusting a clean result.** This review only ever sees the diff of the pushed commit(s). It cannot see cross-file usage, whether a changed function is called safely elsewhere in the codebase, whether it duplicates something in a file the diff doesn't touch, or whether it contradicts an earlier architectural decision made outside the diff. A clean result means "no obvious instance of the listed pattern types found in this diff" — it does not mean the change is broadly safe. The script prints this same caveat as a banner on every run, and the system prompt instructs Claude to phrase its own summary the same way, so this is never mistaken for a more thorough review than it actually is.
+
+Requires `ANTHROPIC_API_KEY` configured as a GitHub Actions secret (**Settings → Secrets and variables → Actions**) — the same key already used locally by `npm run review` (see "Post-debugging diff review" below), now also required in CI for this workflow specifically. Without it, the check fails with a clear error rather than silently skipping.
+
 ## Development approach
 
 This project was built using a CLAUDE.md-driven workflow with Claude Code in VS Code for implementation and Claude (chat) for architectural design, test planning, and code review. The CLAUDE.md file in the project root provides Claude Code with the project context, conventions, and hard rules it needs to produce consistent output.
@@ -241,7 +251,7 @@ Key design decisions:
 
 ### Post-debugging diff review
 
-`npm run review` (`scripts/review-diff.ts`) is a lightweight, manually-triggered script for the moment right after a debugging session that involved 2+ live-patch attempts — the exact scenario the circuit breaker above is about. Before building more work on top of a patched file, it sends the diff plus the full text of CLAUDE.md to Claude in a single API call and asks it to flag two things: (a) a change that contradicts or reverts an earlier fix visible elsewhere in the same diff, and (b) a specific CLAUDE.md convention the diff appears to violate, citing the rule. It prints the result to the console — it does not auto-apply anything, does not fail any process, and is not wired into CI or any test run.
+`npm run review` (`scripts/review-diff.ts`) is a lightweight, manually-triggered script for the moment right after a debugging session that involved 2+ live-patch attempts — the exact scenario the circuit breaker above is about. Before building more work on top of a patched file, it sends the diff plus the full text of CLAUDE.md to Claude in a single API call and asks it to flag two things: (a) a change that contradicts or reverts an earlier fix visible elsewhere in the same diff, and (b) a specific CLAUDE.md convention the diff appears to violate, citing the rule. It prints the result to the console — it does not auto-apply anything, does not fail any process, and this script itself is not wired into CI or any test run (it is invoked manually, on demand).
 
 ```bash
 npm run review                  # git diff HEAD — working tree vs last commit (default)
@@ -249,7 +259,7 @@ npm run review -- HEAD~3        # git diff HEAD~3
 npm run review -- main...HEAD   # any valid git diff ref range
 ```
 
-Requires `ANTHROPIC_API_KEY` set in your local `.env` (see `.env.example`) — this is a local developer tool only and the key is never referenced by any GitHub Actions workflow.
+Requires `ANTHROPIC_API_KEY` set in your local `.env` (see `.env.example`) for local use. The same secret is also required in CI, but by the separate "Commit review (AI)" workflow above (`scripts/commit-review.ts`) — not by this script. The two scripts share the underlying git-diff helper (`scripts/lib/git-diff.ts`) but serve different purposes: this one is a manual, conversational-style review against CLAUDE.md's conventions; that one is an automatic, structured pass/fail check against a fixed list of failure patterns on every push.
 
 ## Roadmap
 

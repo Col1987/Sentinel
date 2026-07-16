@@ -1,0 +1,36 @@
+name: Commit Review (AI)
+
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    # Skip the very first push to a new branch/repo — github.event.before is the
+    # all-zeros SHA when there is no prior commit to diff against.
+    if: github.event.before != '0000000000000000000000000000000000000000'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need history back to github.event.before to build the diff
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run commit review
+        # Single scoped API call for the commits in this push (before..after), not the
+        # full codebase and not a re-review of history already reviewed on a prior push.
+        run: npx tsx scripts/commit-review.ts
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # github.event.before is unset on workflow_dispatch (manual runs) — fall back
+          # to reviewing just the latest commit in that case.
+          COMMIT_REVIEW_BASE: ${{ github.event.before || 'HEAD~1' }}
+          COMMIT_REVIEW_HEAD: ${{ github.sha }}
