@@ -58,6 +58,7 @@ test.describe('Admin access control — negative', { tag: ['@admin'] }, () => {
 
     await page.waitForFunction(
       () => !document.querySelector('[class*="loading"], [aria-busy="true"]'),
+      undefined,
       { timeout: 3_000 },
     ).catch(() => {});
 
@@ -197,6 +198,7 @@ test.describe('Admin access control — negative', { tag: ['@admin'] }, () => {
         const isHidden = overlay && (overlay.style.display === 'none' || overlay.classList.contains('hidden'));
         return !isHidden || !window.location.pathname.includes('admin');
       },
+      undefined,
       { timeout: 10_000 },
     ).catch(() => {});
 

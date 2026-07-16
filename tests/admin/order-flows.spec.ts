@@ -136,6 +136,7 @@ test.describe('Admin order flows', { tag: ['@admin'] }, () => {
     // Wait for any client-side search debounce to settle and loading indicators to clear.
     await page.waitForFunction(
       () => !document.querySelector('[class*="loading"], [class*="spinner"], [aria-busy="true"]'),
+      undefined,
       { timeout: 3_000 },
     ).catch(() => {});
 
@@ -178,6 +179,7 @@ test.describe('Admin order flows', { tag: ['@admin'] }, () => {
       // Give the getAdminOrders CF time to deliver rows before checking count.
       await page.waitForFunction(
         () => document.querySelectorAll('#orders-body tr, #orders-body .order-row').length > 0,
+        undefined,
         { timeout: 8_000 },
       ).catch(() => {});
     }
@@ -245,6 +247,7 @@ test.describe('Admin order flows', { tag: ['@admin'] }, () => {
     if (LIVE_MODE) {
       await page.waitForFunction(
         () => document.querySelectorAll('#orders-body tr, #orders-body .order-row').length > 0,
+        undefined,
         { timeout: 8_000 },
       ).catch(() => {});
     }

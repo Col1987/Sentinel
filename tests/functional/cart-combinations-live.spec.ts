@@ -248,6 +248,7 @@ test.describe('Cart combinations', { tag: ['@functional'] }, () => {
       // registerForCheckout uses waitUntil:'domcontentloaded' — wait for addToCart to be in scope.
       await page.waitForFunction(
         () => typeof (window as any).addToCart === 'function',
+        undefined,
         { timeout: 10_000 },
       ).catch(() => {});
 
@@ -380,6 +381,7 @@ test.describe('Cart combinations', { tag: ['@functional'] }, () => {
       const checkoutEmail = await registerForCheckout(page);
       await page.waitForFunction(
         () => typeof (window as any).addToCart === 'function',
+        undefined,
         { timeout: 10_000 },
       ).catch(() => {});
 
@@ -564,12 +566,14 @@ test.describe('Cart combinations', { tag: ['@functional'] }, () => {
       await page.goto('/', { waitUntil: 'load', timeout: 20_000 });
       await page.waitForFunction(
         () => typeof (window as any).addToCart === 'function',
+        undefined,
         { timeout: 10_000 },
       );
       // addToCart being defined does not guarantee pack card DOM elements are rendered.
       // Wait until at least one onclick="addToCart(...)" element is in the DOM.
       await page.waitForFunction(
         () => document.querySelectorAll('[onclick*="addToCart"]').length > 0,
+        undefined,
         { timeout: 15_000 },
       );
 
@@ -691,6 +695,7 @@ test.describe('Cart combinations', { tag: ['@functional'] }, () => {
       // registerForCheckout uses waitUntil:'domcontentloaded' — Firebase scripts may still be loading.
       await page.waitForFunction(
         () => typeof (window as any).addToCart === 'function',
+        undefined,
         { timeout: 10_000 },
       ).catch(() => {});
 
@@ -802,6 +807,7 @@ test.describe('Cart combinations', { tag: ['@functional'] }, () => {
       // registerForCheckout uses waitUntil:'domcontentloaded' — Firebase scripts may still be loading.
       await page.waitForFunction(
         () => typeof (window as any).addToCart === 'function',
+        undefined,
         { timeout: 10_000 },
       ).catch(() => {});
 

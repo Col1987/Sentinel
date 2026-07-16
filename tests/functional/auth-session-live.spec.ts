@@ -193,7 +193,7 @@ test.describe('Auth session security (LIVE_MODE only)', { tag: ['@functional'] }
     }
 
     await page.locator('button[type="submit"]:has-text("Login")').click();
-    await page.waitForFunction(() => document.readyState === 'complete', { timeout: 20_000 });
+    await page.waitForFunction(() => document.readyState === 'complete', undefined, { timeout: 20_000 });
     await page.waitForTimeout(2_000);
     console.log(`[INFO] remember-me-persists-session: logged in — URL="${page.url()}"`);
 
@@ -290,7 +290,7 @@ test.describe('Auth session security (LIVE_MODE only)', { tag: ['@functional'] }
     console.log('[INFO] no-remember-me-session-behavior: "Remember me" left unchecked ✓');
 
     await page.locator('button[type="submit"]:has-text("Login")').click();
-    await page.waitForFunction(() => document.readyState === 'complete', { timeout: 20_000 });
+    await page.waitForFunction(() => document.readyState === 'complete', undefined, { timeout: 20_000 });
     await page.waitForTimeout(2_000);
 
     const storageState = await page.context().storageState();
@@ -360,7 +360,7 @@ test.describe('Auth session security (LIVE_MODE only)', { tag: ['@functional'] }
     await page.locator('#login-email').fill(adminEmail);
     await page.locator('#login-password').fill(adminPassword);
     await page.locator('button[type="submit"]:has-text("Login")').click();
-    await page.waitForFunction(() => document.readyState === 'complete', { timeout: 20_000 });
+    await page.waitForFunction(() => document.readyState === 'complete', undefined, { timeout: 20_000 });
     await page.waitForTimeout(2_000);
 
     console.log(`[INFO] session-timeout-check: logged in — URL="${page.url()}"`);

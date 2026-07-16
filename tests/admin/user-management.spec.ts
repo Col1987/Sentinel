@@ -45,6 +45,7 @@ async function openFirstUserDetail(page: Page): Promise<boolean> {
       await el.click();
       await page.waitForFunction(
         () => !!document.querySelector('[id*="user-modal"], [id*="user-detail"], [class*="user-detail"]'),
+        undefined,
         { timeout: 4_000 },
       ).catch(() => {});
       console.log(`[INFO] openFirstUserDetail: clicked first user item via "${sel}".`);

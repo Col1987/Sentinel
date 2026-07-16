@@ -127,6 +127,7 @@ test.describe('Wi-Fi config with multiple properties (LIVE_MODE only)', { tag: [
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(
       () => typeof (window as any).addToCart === 'function' && Array.isArray((window as any).PRODUCTS) && (window as any).PRODUCTS.length > 0,
+      undefined,
       { timeout: 15_000 },
     ).catch(() => {});
     await addPackAndGoToCheckout(page, PACK_ID);
@@ -213,6 +214,7 @@ test.describe('Wi-Fi config with multiple properties (LIVE_MODE only)', { tag: [
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(
       () => typeof (window as any).addToCart === 'function' && Array.isArray((window as any).PRODUCTS) && (window as any).PRODUCTS.length > 0,
+      undefined,
       { timeout: 15_000 },
     ).catch(() => {});
     await addPackAndGoToCheckout(page, PACK_ID);

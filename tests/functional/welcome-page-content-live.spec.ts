@@ -132,6 +132,7 @@ test.describe('Welcome page content sections (LIVE_MODE only)', { tag: ['@functi
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(
       () => typeof (window as any).addToCart === 'function' && Array.isArray((window as any).PRODUCTS) && (window as any).PRODUCTS.length > 0,
+      undefined,
       { timeout: 15_000 },
     ).catch(() => {});
     await addPackAndGoToCheckout(page);
@@ -223,6 +224,7 @@ test.describe('Welcome page content sections (LIVE_MODE only)', { tag: ['@functi
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(
       () => typeof (window as any).addToCart === 'function' && Array.isArray((window as any).PRODUCTS) && (window as any).PRODUCTS.length > 0,
+      undefined,
       { timeout: 15_000 },
     ).catch(() => {});
     await addPackAndGoToCheckout(page);
@@ -308,6 +310,7 @@ test.describe('Welcome page content sections (LIVE_MODE only)', { tag: ['@functi
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(
       () => typeof (window as any).addToCart === 'function' && Array.isArray((window as any).PRODUCTS) && (window as any).PRODUCTS.length > 0,
+      undefined,
       { timeout: 15_000 },
     ).catch(() => {});
     await addPackAndGoToCheckout(page);
@@ -393,6 +396,7 @@ test.describe('Welcome page content sections (LIVE_MODE only)', { tag: ['@functi
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(
       () => typeof (window as any).addToCart === 'function' && Array.isArray((window as any).PRODUCTS) && (window as any).PRODUCTS.length > 0,
+      undefined,
       { timeout: 15_000 },
     ).catch(() => {});
     await addPackAndGoToCheckout(page);

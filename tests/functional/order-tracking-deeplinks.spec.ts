@@ -66,6 +66,7 @@ test.describe('Order tracking deeplinks', { tag: ['@functional'] }, () => {
     // Allow the page JS to read the query parameter and populate the input.
     await page.waitForFunction(
       () => !document.querySelector('[class*="loading"], [class*="spinner"], [aria-busy="true"]'),
+      undefined,
       { timeout: 6_000 },
     ).catch(() => {});
 
@@ -144,6 +145,7 @@ test.describe('Order tracking deeplinks', { tag: ['@functional'] }, () => {
 
     await page.waitForFunction(
       () => !document.querySelector('[class*="loading"], [class*="spinner"], [aria-busy="true"]'),
+      undefined,
       { timeout: 6_000 },
     ).catch(() => {});
 

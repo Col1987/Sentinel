@@ -142,6 +142,7 @@ test.describe('Cart manipulation', { tag: ['@security'] }, () => {
     // Resolves immediately when the count changes; times out after 5s if it never updates.
     await page.waitForFunction(
       () => document.querySelector('#cart-count')?.textContent?.trim() !== '0',
+      undefined,
       { timeout: 5_000 },
     ).catch(() => {});
 

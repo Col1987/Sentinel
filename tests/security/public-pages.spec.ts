@@ -60,6 +60,7 @@ test.describe('Public page security', { tag: ['@security'] }, () => {
         return ['not found', 'no order', 'could not find', 'invalid', 'does not exist', 'no results', 'try again', 'error']
           .some(s => body.includes(s));
       },
+      undefined,
       { timeout: 6_000 },
     ).catch(() => {});
 
@@ -141,6 +142,7 @@ test.describe('Public page security', { tag: ['@security'] }, () => {
         return ['not found', 'no order', 'could not find', 'invalid', 'does not exist', 'no results', 'try again', 'error']
           .some(s => body.includes(s));
       },
+      undefined,
       { timeout: 6_000 },
     ).catch(() => {});
 

@@ -120,7 +120,7 @@ export async function auditApiKeyExposure(
     try {
       await page.goto(path, { waitUntil: 'load' });
       // Wait for deferred/dynamically-injected scripts, matching auditCodeQuality's pattern.
-      await page.waitForFunction(() => document.readyState === 'complete', { timeout: 2_000 }).catch(() => {});
+      await page.waitForFunction(() => document.readyState === 'complete', undefined, { timeout: 2_000 }).catch(() => {});
     } catch (err) {
       findings.push({
         url: pageUrl, severity: 'info', category: 'api-key-exposure',

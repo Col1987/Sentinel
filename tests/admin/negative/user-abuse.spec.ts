@@ -62,6 +62,7 @@ test.describe('Admin user abuse — negative', { tag: ['@admin'] }, () => {
     // Allow any async data fetch to settle.
     await page.waitForFunction(
       () => !document.querySelector('[class*="loading"], [aria-busy="true"]'),
+      undefined,
       { timeout: 5_000 },
     ).catch(() => {});
 
@@ -140,6 +141,7 @@ test.describe('Admin user abuse — negative', { tag: ['@admin'] }, () => {
     // Allow any async data fetch to settle.
     await page.waitForFunction(
       () => !document.querySelector('[class*="loading"], [aria-busy="true"]'),
+      undefined,
       { timeout: 5_000 },
     ).catch(() => {});
 
@@ -183,6 +185,7 @@ test.describe('Admin user abuse — negative', { tag: ['@admin'] }, () => {
 
       await page.waitForFunction(
         () => !document.querySelector('[class*="loading"]'),
+        undefined,
         { timeout: 3_000 },
       ).catch(() => {});
       break;

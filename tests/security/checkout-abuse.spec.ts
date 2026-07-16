@@ -29,6 +29,7 @@ test.describe('Checkout abuse', { tag: ['@security'] }, () => {
     // Allow Firebase auth and cart-state initialisation to settle.
     await page.waitForFunction(
       () => !document.querySelector('[class*="loading"], [aria-busy="true"]'),
+      undefined,
       { timeout: 6_000 },
     ).catch(() => {});
 
@@ -179,6 +180,7 @@ test.describe('Checkout abuse', { tag: ['@security'] }, () => {
 
     await page.waitForFunction(
       () => !document.querySelector('[class*="loading"], [aria-busy="true"]'),
+      undefined,
       { timeout: 6_000 },
     ).catch(() => {});
 
@@ -197,6 +199,7 @@ test.describe('Checkout abuse', { tag: ['@security'] }, () => {
       // Allow onerror handlers one tick to fire if the browser interprets the value as HTML.
       await page.waitForFunction(
         () => !document.querySelector('[class*="loading"]'),
+        undefined,
         { timeout: 2_000 },
       ).catch(() => {});
     }
@@ -223,6 +226,7 @@ test.describe('Checkout abuse', { tag: ['@security'] }, () => {
 
     await page.waitForFunction(
       () => !document.querySelector('[class*="loading"], [aria-busy="true"]'),
+      undefined,
       { timeout: 6_000 },
     ).catch(() => {});
 
@@ -274,6 +278,7 @@ test.describe('Checkout abuse', { tag: ['@security'] }, () => {
 
     await page.waitForFunction(
       () => !document.querySelector('[class*="loading"], [aria-busy="true"]'),
+      undefined,
       { timeout: 6_000 },
     ).catch(() => {});
 

@@ -37,6 +37,7 @@ async function submitTrackingId(
 
   await page.waitForFunction(
     () => !document.querySelector('[class*="loading"], [class*="spinner"], [aria-busy="true"]'),
+    undefined,
     { timeout: 6_000 },
   ).catch(() => {});
 }
@@ -68,6 +69,7 @@ test.describe('Order tracking — negative', { tag: ['@security'] }, () => {
 
     await page.waitForFunction(
       () => !document.querySelector('[class*="loading"], [aria-busy="true"]'),
+      undefined,
       { timeout: 5_000 },
     ).catch(() => {});
 
@@ -180,6 +182,7 @@ test.describe('Order tracking — negative', { tag: ['@security'] }, () => {
       await page.goto(`/track.html?id=${encodeURIComponent(XSS_PAYLOAD)}`, { waitUntil: 'load' });
       await page.waitForFunction(
         () => !document.querySelector('[class*="loading"]'),
+        undefined,
         { timeout: 2_000 },
       ).catch(() => {});
     }

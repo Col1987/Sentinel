@@ -81,6 +81,7 @@ test.describe('Auth flows', { tag: ['@functional'] }, () => {
           text.includes('not found')
         );
       },
+      undefined,
       { timeout: 10_000 },
     ).catch(() => {});
 

@@ -172,6 +172,7 @@ async function checkoutAs(
   // registerForCheckout uses waitUntil:'domcontentloaded' — addToCart may not be in scope yet.
   await page.waitForFunction(
     () => typeof (window as any).addToCart === 'function',
+    undefined,
     { timeout: 10_000 },
   ).catch(() => {});
 

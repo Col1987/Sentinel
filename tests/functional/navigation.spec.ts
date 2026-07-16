@@ -54,10 +54,10 @@ test.describe('Navigation', { tag: ['@functional'] }, () => {
   test('logo link — returns to top of page from a scrolled position', async ({ page }) => {
     await page.goto('/');
     await page.evaluate(() => window.scrollTo({ top: 3000, behavior: 'instant' }));
-    await page.waitForFunction(() => window.scrollY > 2000, { timeout: 3_000 });
+    await page.waitForFunction(() => window.scrollY > 2000, undefined, { timeout: 3_000 });
     await runJourney(navLogoHome, page);
     // Handles both a same-page smooth scroll and a full navigation to /index.html
-    await page.waitForFunction(() => window.scrollY < 50, { timeout: 5_000 });
+    await page.waitForFunction(() => window.scrollY < 50, undefined, { timeout: 5_000 });
   });
 
   test('watch-demo-button-action — clicking "Watch Demo" produces a visible response', async ({ page }) => {

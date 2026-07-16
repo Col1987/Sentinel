@@ -228,6 +228,7 @@ test.describe('Admin pack flows', { tag: ['@admin'] }, () => {
     // Wait briefly for a custom in-page confirmation modal to render if no native dialog fired.
     await page.waitForFunction(
       () => !!document.querySelector('[id*="confirm"], [class*="confirm-modal"], [class*="delete-confirm"]') || nativeDialogSeen === undefined,
+      undefined,
       { timeout: 2_000 },
     ).catch(() => {}); // timeout is expected when no custom modal exists
 

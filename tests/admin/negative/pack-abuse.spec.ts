@@ -160,6 +160,7 @@ test.describe('Admin pack abuse — negative', { tag: ['@admin'] }, () => {
       await submitBtn.click();
       await page.waitForFunction(
         () => !document.querySelector('[class*="loading"]'),
+        undefined,
         { timeout: 3_000 },
       ).catch(() => {});
     }
@@ -222,6 +223,7 @@ test.describe('Admin pack abuse — negative', { tag: ['@admin'] }, () => {
       await submitBtn.click();
       await page.waitForFunction(
         () => !document.querySelector('[class*="loading"]'),
+        undefined,
         { timeout: 3_000 },
       ).catch(() => {});
     }
@@ -293,6 +295,7 @@ test.describe('Admin pack abuse — negative', { tag: ['@admin'] }, () => {
     // Give the onerror handler one tick to fire if the browser interprets the filled value as HTML.
     await page.waitForFunction(
       () => !document.querySelector('[class*="loading"]'),
+      undefined,
       { timeout: 2_000 },
     ).catch(() => {});
 
@@ -370,6 +373,7 @@ test.describe('Admin pack abuse — negative', { tag: ['@admin'] }, () => {
     // Allow change handlers and validation to run.
     await page.waitForFunction(
       () => !!document.querySelector('[class*="error"], [class*="warning"], [class*="file-error"], [class*="size"]'),
+      undefined,
       { timeout: 3_000 },
     ).catch(() => {});
 

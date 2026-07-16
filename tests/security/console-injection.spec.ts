@@ -155,6 +155,7 @@ test.describe('Console injection and client-side hardening', { tag: ['@security'
     // login/account nav. Can't use networkidle: Firebase long-polling keeps connections open.
     await page.waitForFunction(
       () => !!document.querySelector('#btn-login, #nav-account'),
+      undefined,
       { timeout: 5_000 },
     ).catch(() => {});
 

@@ -37,6 +37,7 @@ async function addFirstItemToCart(
 
   await page.waitForFunction(
     () => (document.querySelector('#cart-count')?.textContent?.trim() ?? '0') !== '0',
+    undefined,
     { timeout: 5_000 },
   ).catch(() => {});
 
@@ -89,6 +90,7 @@ test.describe('Storefront behaviour', { tag: ['@functional'] }, () => {
     // Allow cart JS to re-initialise from localStorage.
     await page.waitForFunction(
       () => document.querySelector('#cart-count') !== null,
+      undefined,
       { timeout: 5_000 },
     ).catch(() => {});
 
@@ -150,6 +152,7 @@ test.describe('Storefront behaviour', { tag: ['@functional'] }, () => {
 
     await page.waitForFunction(
       () => (document.querySelector('#cart-count')?.textContent?.trim() ?? '') === '0',
+      undefined,
       { timeout: 5_000 },
     ).catch(() => {});
 
@@ -414,6 +417,7 @@ test.describe('Storefront behaviour', { tag: ['@functional'] }, () => {
 
     await page.waitForFunction(
       () => parseInt(document.querySelector('#cart-count')?.textContent?.trim() ?? '0', 10) >= 2,
+      undefined,
       { timeout: 5_000 },
     ).catch(() => {});
 
@@ -489,6 +493,7 @@ test.describe('Storefront behaviour', { tag: ['@functional'] }, () => {
     await page.goto('/', { waitUntil: 'load' });
     await page.waitForFunction(
       () => document.querySelector('#cart-count') !== null,
+      undefined,
       { timeout: 5_000 },
     ).catch(() => {});
 

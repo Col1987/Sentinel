@@ -26,6 +26,7 @@ test.describe('Admin order abuse — negative', { tag: ['@admin'] }, () => {
     if (LIVE_MODE) {
       await page.waitForFunction(
         () => document.querySelectorAll('#orders-body tr, #orders-body .order-row').length > 0,
+        undefined,
         { timeout: 8_000 },
       ).catch(() => {});
     }
@@ -90,6 +91,7 @@ test.describe('Admin order abuse — negative', { tag: ['@admin'] }, () => {
 
     await page.waitForFunction(
       () => !document.querySelector('[class*="loading"], [aria-busy="true"]'),
+      undefined,
       { timeout: 3_000 },
     ).catch(() => {});
 
@@ -146,6 +148,7 @@ test.describe('Admin order abuse — negative', { tag: ['@admin'] }, () => {
     // Allow one debounce tick for any search handler to process the value.
     await page.waitForFunction(
       () => !document.querySelector('[class*="loading"]'),
+      undefined,
       { timeout: 2_000 },
     ).catch(() => {});
 
@@ -195,6 +198,7 @@ test.describe('Admin order abuse — negative', { tag: ['@admin'] }, () => {
       await searchInput.fill(payload);
       await page.waitForFunction(
         () => !document.querySelector('[class*="loading"]'),
+        undefined,
         { timeout: 2_000 },
       ).catch(() => {});
       console.log(`[INFO] order-search-sql-patterns: typed "${payload.slice(0, 40)}" — no crash.`);

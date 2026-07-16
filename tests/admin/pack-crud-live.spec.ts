@@ -160,6 +160,7 @@ test.describe.serial('Admin pack CRUD (LIVE_MODE only)', { tag: ['@admin'] }, ()
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForFunction(
       () => window.location.pathname.includes('admin') && document.readyState === 'complete',
+      undefined,
       { timeout: 15_000 },
     );
     await openPacksTab(page);
@@ -267,6 +268,7 @@ test.describe.serial('Admin pack CRUD (LIVE_MODE only)', { tag: ['@admin'] }, ()
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForFunction(
       () => window.location.pathname.includes('admin') && document.readyState === 'complete',
+      undefined,
       { timeout: 15_000 },
     );
     await openPacksTab(page);
@@ -363,6 +365,7 @@ test.describe.serial('Admin pack CRUD (LIVE_MODE only)', { tag: ['@admin'] }, ()
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForFunction(
       () => window.location.pathname.includes('admin') && document.readyState === 'complete',
+      undefined,
       { timeout: 15_000 },
     );
     await openPacksTab(page);

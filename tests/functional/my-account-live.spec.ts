@@ -39,6 +39,7 @@ async function checkoutAsVerifiedCustomer(page: Page): Promise<string> {
   const checkoutEmail = await registerVerifiedAccount(page);
   await page.waitForFunction(
     () => typeof (window as any).addToCart === 'function' && Array.isArray((window as any).PRODUCTS) && (window as any).PRODUCTS.length > 0,
+    undefined,
     { timeout: 15_000 },
   ).catch(() => {});
   await addPackAndGoToCheckout(page);
@@ -255,6 +256,7 @@ test.describe('My Account (LIVE_MODE only)', { tag: ['@functional'] }, () => {
     // before filling anything, so this doesn't race with saveAccountDetails().
     await page.waitForFunction(
       () => (document.getElementById('acc-mobile') as HTMLInputElement)?.value?.includes('821234567'),
+      undefined,
       { timeout: 10_000 },
     ).catch(() => {});
 
@@ -279,6 +281,7 @@ test.describe('My Account (LIVE_MODE only)', { tag: ['@functional'] }, () => {
     // rather than racing it with a fixed timeout.
     await page.waitForFunction(
       () => !!(document.getElementById('acc-mobile') as HTMLInputElement)?.value,
+      undefined,
       { timeout: 10_000 },
     ).catch(() => {});
 
