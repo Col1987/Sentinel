@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { loginAsAdmin } from '../../src/utils/auth';
 import { LIVE_MODE } from '../../src/config/sites';
+import { registerVerifiedAccount } from './account-helpers';
 
 const CF_PATTERN = '**europe-west1-juelhaus-co-za.cloudfunctions.net**';
 
@@ -258,24 +258,16 @@ test.describe('Storefront behaviour', { tag: ['@functional'] }, () => {
   test('get-started-scrolls-to-packs — "Get Started" clicked while logged in scrolls to the Welcome Packs section', async ({ page }) => {
     test.info().annotations.push({
       type: 'description',
-      description: "Logged in as admin, then navigated to the homepage and clicked the 'Get Started' button. Verified that the page scrolled to the Welcome Packs section (#gifts). For authenticated users the CTA should bypass the auth prompt and scroll directly to the product catalogue.",
+      description: "Registered and verified a real, non-admin customer account (handleGetStarted() gates on window.currentUser.emailVerified, so an unverified account would silently take the wrong code path), then navigated to the homepage and clicked the 'Get Started' button. Verified that the page scrolled to the Welcome Packs section (#gifts). For authenticated customers the CTA should bypass the auth prompt and scroll directly to the product catalogue. Previously this test logged in as admin instead, which confounded the result: an admin session gets redirected away to /admin.html entirely on this click (a different, unrelated defect) rather than exercising the actual customer scroll behaviour this test claims to verify.",
     });
 
-    test.slow();
+    // register (~5s) + Gmail verification poll (up to 30s, see account-helpers.ts) +
+    // navigate + click + scroll wait (~10s) — 90s matches the budget already proven
+    // for other tests using registerVerifiedAccount (my-account-live.spec.ts).
+    test.setTimeout(90_000);
 
-    await loginAsAdmin(page);
-
-    // Cap the goto so a redirect loop (homepage → admin auth guard → /admin.html) does not
-    // block for the full test.slow() duration. domcontentloaded is sufficient here.
-    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 10_000 }).catch(() => {});
-
-    if (page.url().includes('admin.html')) {
-      console.log(
-        '[INFO] get-started-scrolls-to-packs: homepage redirected admin to /admin.html — ' +
-          'cannot test homepage CTA scroll for admin users. Skipping.',
-      );
-      return;
-    }
+    await registerVerifiedAccount(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 10_000 });
 
     const getStartedBtn = page.locator(
       'button:has-text("Get Started"), a:has-text("Get Started"), [id*="get-started"]',
@@ -289,20 +281,7 @@ test.describe('Storefront behaviour', { tag: ['@functional'] }, () => {
       return;
     }
 
-    // Cap navigation timeout: clicking "Get Started" when logged in may trigger a redirect.
-    // Without a cap, the default (= test.slow() timeout = 180s) would hang the test.
-    page.setDefaultNavigationTimeout(8_000);
-    await getStartedBtn.click().catch(() => {});
-    page.setDefaultNavigationTimeout(60_000); // restore
-
-    // If the click redirected back to admin.html, the homepage CTA is not relevant for admin users.
-    if (page.url().includes('admin.html')) {
-      console.log(
-        '[INFO] get-started-scrolls-to-packs: "Get Started" navigated admin to /admin.html — ' +
-          'CTA scroll not applicable for admin users. Skipping.',
-      );
-      return;
-    }
+    await getStartedBtn.click();
 
     // Wait for scroll to settle.
     await page.waitForFunction(() => window.scrollY > 100, undefined, { timeout: 3_000 }).catch(() => {});
@@ -317,14 +296,20 @@ test.describe('Storefront behaviour', { tag: ['@functional'] }, () => {
     if (!giftsInViewport) {
       const scrollY = await page.evaluate(() => window.scrollY).catch(() => 0);
       console.warn(
-        `[FINDING][low] get-started-scrolls-to-packs: #gifts is not in viewport after clicking "Get Started" ` +
-          `(scrollY=${scrollY}). Logged-in users should be scrolled directly to the Welcome Packs section.`,
+        `[FINDING][medium] get-started-scrolls-to-packs: clicking "Get Started" as a verified, logged-in ` +
+          `customer produced no visible effect (scrollY=${scrollY}, unchanged from page load) — no scroll, ` +
+          `no navigation, no console error. handleGetStarted()'s own source confirms the correct branch should ` +
+          `run (currentUser set, emailVerified true → #gifts.scrollIntoView()), but the scroll does not occur. ` +
+          `This is the site's primary conversion CTA for returning customers silently doing nothing.`,
       );
     } else {
       console.log('[INFO] get-started-scrolls-to-packs: #gifts is in viewport after clicking "Get Started" ✓');
     }
 
-    expect(giftsInViewport, '"Get Started" for a logged-in user must scroll to the #gifts section').toBe(true);
+    expect(
+      giftsInViewport,
+      '"Get Started" for a verified logged-in customer must scroll to the #gifts section, not silently do nothing',
+    ).toBe(true);
   });
 
   // ─── proceed-to-checkout-logged-out ──────────────────────────────────────────
