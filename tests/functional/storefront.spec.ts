@@ -302,7 +302,7 @@ test.describe('Storefront behaviour', { tag: ['@functional'] }, () => {
     }
 
     // Wait for scroll to settle.
-    await page.waitForFunction(() => window.scrollY > 100, { timeout: 3_000 }).catch(() => {});
+    await page.waitForFunction(() => window.scrollY > 100, undefined, { timeout: 3_000 }).catch(() => {});
 
     const giftsInViewport = await page.evaluate(() => {
       const el = document.querySelector('#gifts');
