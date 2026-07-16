@@ -97,6 +97,46 @@ export async function setDateField(page: Page, id: string, value: string): Promi
   );
 }
 
+// #cfg-property is the first field fillConfigStep touches, right as the config step becomes
+// visible. It has an intermittent site-side rendering delay: a live diagnostic (poll loop
+// logging visibility/disabled/readonly every 300ms) showed it becoming fillable in 5ms in the
+// normal case, yet nightly regression runs hit the *full* 180-240s test timeout waiting on the
+// plain .fill() call, then passed in 51s on the very next retry — meaning there is no stable
+// "loading" class or container state to wait on, only an occasional, unpredictably long delay.
+// A single .fill() relies on Playwright's actionability wait running for the entire remaining
+// test timeout, which is exactly what was failing. Retrying with a short per-attempt timeout
+// converts one doomed multi-minute wait into a few short ones, giving the delayed render room
+// to catch up — same verify-then-retry shape as the addrPanelOpen fallback below, and per
+// CLAUDE.md, failures are logged (never silently swallowed) and the final attempt still hard-fails.
+// Widened from 3 to 5 attempts after local verification showed the delay can exceed a 3-attempt
+// (~41s) budget for this specific site-side condition — 5 attempts at the same backoff (~71s
+// worst case) gives the delayed render more room without masking a genuine hard failure.
+async function fillPropertyField(page: Page, value: string): Promise<void> {
+  const locator = page.locator('#cfg-property').last();
+  const attempts = 5;
+  const perAttemptTimeoutMs = 12_000;
+  const backoffMs = 2_500;
+  let lastError: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      await locator.fill(value, { timeout: perAttemptTimeoutMs });
+      const actual = await locator.inputValue();
+      if (actual === value) return;
+      lastError = new Error(`#cfg-property value did not stick after fill (got "${actual}")`);
+    } catch (err) {
+      lastError = err;
+    }
+    if (i < attempts - 1) {
+      console.error(
+        `[WARN] fillConfigStep: #cfg-property fill attempt ${i + 1}/${attempts} failed, ` +
+          `retrying in ${backoffMs}ms — ${String(lastError)}`,
+      );
+      await page.waitForTimeout(backoffMs);
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
 // Fills Property & Guest Details then loops through all config sub-steps
 // (Wi-Fi, branding, house rules, etc.) until the delivery step appears.
 // Pass wifiConfig to fill in Wi-Fi credentials; omit to click "Continue Without Wi-Fi".
@@ -108,7 +148,7 @@ export async function fillConfigStep(
   // remain in the DOM (hidden) while item 2's form is shown. .last() always targets
   // the current (most recently added) item's fields regardless of how many items
   // preceded it. Safe for single-item carts (only one element → last === first).
-  await page.locator('#cfg-property').last().fill(ADDR.property);
+  await fillPropertyField(page, ADDR.property);
   await page.locator('#cfg-address').last().fill(`${ADDR.unit} ${ADDR.street}, ${ADDR.suburb}, ${ADDR.city}`);
   // The breakdown button toggles the address panel — only click if it's not already open.
   // If the panel still doesn't open after click (can happen for item 2+ in multi-item carts
