@@ -111,6 +111,26 @@ This rule overrides any instruction to "keep trying" or "just one more fix" give
 
 Additionally: any test expected to take longer than 60 seconds must have that duration explicitly justified in a code comment before it is built, not discovered afterward. If a test's actual runtime exceeds its stated justification by more than 2×, that is itself a signal to stop and investigate before adding more timeout budget.
 
+### Test population must match the real-world scenario being tested
+
+Before writing a test, confirm the account type/session/user state actually matches who would encounter this behaviour in reality — not whichever authenticated helper already exists and is convenient to call. Using loginAsAdmin() to test a customer-facing feature is a common trap: it's already built, it works, and it produces a plausible-looking pass or fail — but if a real admin would never be the one triggering that flow, the test is measuring the wrong population and its result proves nothing about the actual scenario.
+
+Before trusting a test's result, check that its setup population matches its own stated description/claim. If a test's description says "authenticated customers," its setup must use a real customer account, not an admin account standing in for convenience.
+
+Real example: get-started-scrolls-to-packs used loginAsAdmin() to test a customer-facing CTA. This produced a misleading result — the test failed, but for the wrong reason (a full admin redirect made the target element vanish entirely) rather than testing what a real customer would experience. Rewriting it to use a genuine verified customer account revealed the real defect: the CTA is a complete silent no-op for actual customers.
+
+### When a timing/infrastructure symptom appears, fix that first before trusting the assertion underneath it
+
+A test that looks like it's "hanging" or "slow but eventually resolves" may be masking a real, fast, correctly-failing assertion underneath an infrastructure problem. Do not assume the underlying test logic is fine just because the failure presents as a timeout — timeouts and slow resolution are themselves suspicious and warrant investigation before the assertion result is trusted either way.
+
+Checklist when a test is unexpectedly slow or timing out:
+1. Get the FULL error, not just "test timeout of Nms exceeded" — what was the last thing that happened before the timeout fired?
+2. Check whether every wait/assertion in the failure path has an explicit timeout that's actually taking effect — specifically check for the waitForFunction(fn, options) argument-order bug (options silently swallowed as the arg parameter for zero-argument functions — see the dedicated known-working-patterns entry). This bug is invisible to TypeScript and has caused real, expensive false timeouts across this codebase.
+3. Once any masking timeout/infrastructure issue is fixed, RE-RUN and look at the real result — a fast, clean failure with a real assertion error is a genuine finding, not a bug in the fix.
+4. Only after ruling out infrastructure causes should a slow-but-passing or failing test be attributed to the site's actual behaviour.
+
+Real example: get-started-scrolls-to-packs appeared to hang for 180 seconds. The actual cause was the waitForFunction argument-order bug silently disabling the 3-second scroll-detection wait immediately preceding the test's own assertion — a bug in the test's own code, not the shared loginAsAdmin() helper it also called (which, in the same trace, resolved in ~10 seconds and was not the source of the hang). Fixing that one call reduced the test to a clean 12-second failure, revealing a real site defect that had been sitting invisible behind an infrastructure symptom the whole time.
+
 ### Code
 - Page Object Model for all page interactions. Every page gets a class in `src/pages/`
 - No hardcoded URLs. All target sites configured in `src/config/sites.ts`
