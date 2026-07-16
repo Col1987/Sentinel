@@ -4,6 +4,7 @@ import {
   ADDR, CHECKIN, CHECKOUT_DATE, PACK_ID,
   registerForCheckout, advanceThroughDeliveryToPayment, setDateField,
 } from '../functional/checkout-helpers';
+import { findAndOpenOrderInAdmin, closeOrderModal } from '../functional/order-lifecycle-helpers';
 
 // Per-customer identifiers that are unique and scannable for cross-contamination.
 // Kept under TEST_NAME_PREFIX so admin searches for "SENTINEL TEST" still find them.
@@ -183,20 +184,23 @@ async function checkoutAs(
   await advanceThroughDeliveryToPayment(page);
   await page.locator('#co-billing-addr').fill(ADDR.billing);
 
-  const cfReqPromise = page.waitForRequest(
-    req => req.url().includes('cloudfunctions.net') && req.method() === 'POST',
+  // Proven pattern from checkout-helpers.ts's submitPaymentAndCapture — read the CF
+  // *response* body, not the outgoing request's postData. The client never knows the
+  // server-assigned orderId before submitting, so reading the request always yields
+  // null; this was the actual root cause of beforeAll silently capturing A=null, B=null.
+  const cfResponsePromise = page.waitForResponse(
+    res => res.url().includes('cloudfunctions.net') && res.request().method() === 'POST',
     { timeout: 30_000 },
   ).catch(() => null);
   const navPromise = page.waitForNavigation({ timeout: 30_000 }).catch(() => null);
   await page.locator('#pay-now-btn').click();
-  const [cfReq] = await Promise.all([cfReqPromise, navPromise]);
+  const [cfResp] = await Promise.all([cfResponsePromise, navPromise]);
 
   let orderId: string | null = null;
-  if (cfReq) {
-    try {
-      const parsed = JSON.parse(cfReq.postData() ?? '') as Record<string, unknown>;
-      orderId = (parsed?.data as Record<string, unknown>)?.orderId as string ?? null;
-    } catch { /* ignore */ }
+  if (cfResp) {
+    const body = await cfResp.json().catch(() => ({})) as Record<string, unknown>;
+    const result = body?.result as Record<string, unknown> | undefined;
+    orderId = (result?.orderId ?? result?.id ?? body?.orderId ?? null) as string | null;
   }
 
   console.log(`[INFO] checkoutAs: ${email} → orderId=${orderId}`);
@@ -311,14 +315,51 @@ test.describe('Data boundary — cross-customer isolation', { tag: ['@security']
       customerB = { ...resultB, welcomeUrl: null };
       await signOutCurrentUser(page);
 
-      // ── Admin: extract welcome page URLs ──
-      console.log('[INFO] data-boundary beforeAll: logging in as admin to get welcome page URLs...');
+      // ── Admin: recover missing order IDs, then extract welcome page URLs ──
+      console.log('[INFO] data-boundary beforeAll: logging in as admin...');
       await adminLogin(page);
       // Wait for the admin orders table to be present and Firestore to hydrate
       // before attempting viewOrder() or search — avoids a race where the
       // table is still loading and window.viewOrder silently finds nothing.
       await page.locator('#orders-body').waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {});
       await page.waitForTimeout(2_000);
+
+      // The createOrder Cloud Function response frequently omits the orderId — a known,
+      // already-documented limitation (see checkout-helpers.ts's submitPaymentAndCapture:
+      // "often absent — see runCheckoutFlow's callers, which fall back to an admin lookup
+      // by email"). Recover it here via the same proven fallback rather than accepting
+      // null and letting the hard-fail below fire unnecessarily.
+      if (!customerA.orderId) {
+        console.log('[INFO] data-boundary beforeAll: CF response omitted A\'s orderId — recovering via admin lookup by email...');
+        const recoveredA = await findAndOpenOrderInAdmin(page, customerA.email, null);
+        if (recoveredA) {
+          customerA.orderId = recoveredA;
+          await closeOrderModal(page);
+          console.log(`[INFO] data-boundary beforeAll: recovered A's orderId=${recoveredA} via admin lookup ✓`);
+        }
+      }
+      if (!customerB.orderId) {
+        console.log('[INFO] data-boundary beforeAll: CF response omitted B\'s orderId — recovering via admin lookup by email...');
+        const recoveredB = await findAndOpenOrderInAdmin(page, customerB.email, null);
+        if (recoveredB) {
+          customerB.orderId = recoveredB;
+          await closeOrderModal(page);
+          console.log(`[INFO] data-boundary beforeAll: recovered B's orderId=${recoveredB} via admin lookup ✓`);
+        }
+      }
+
+      // Hard-fail here rather than letting all three tests run against null order IDs
+      // and produce a misleading pass — each test's own guard only soft-logs a
+      // [FINDING] and returns early, so Playwright would still report "passed" with
+      // no cross-customer check having actually happened. Only fires now if the CF
+      // response AND the admin-lookup fallback both failed to produce a real order ID.
+      if (!customerA.orderId || !customerB.orderId) {
+        throw new Error(
+          'data-boundary beforeAll: failed to capture a real order ID for one or both customers ' +
+            `(A="${customerA.orderId}", B="${customerB.orderId}") even after the admin-lookup fallback. ` +
+            'Cross-customer isolation tests require real order IDs and cannot proceed without them.',
+        );
+      }
 
       customerA.welcomeUrl = await getWelcomeUrlFromAdmin(page, customerA.email, customerA.orderId, 'setup/A');
       // Clear search before looking up B to prevent stale filter showing A's row.

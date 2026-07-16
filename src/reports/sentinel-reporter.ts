@@ -9,6 +9,7 @@ import type {
   FullResult,
 } from '@playwright/test/reporter';
 import type { AuditResult, AuditFinding, Severity } from '../auditors/types';
+import { RISK_MAP, type RiskEntry } from './risk-map';
 
 // ─── Internal types ───────────────────────────────────────────────────────────
 
@@ -427,6 +428,125 @@ function renderExecSummary(
     <p class="exec-text">${testSummary}</p>
     <p class="exec-text">${findingSummary}</p>
     ${breakdown ? `<div class="exec-breakdown">${breakdown}</div>` : ''}
+  </section>`;
+}
+
+// ─── Risk coverage ──────────────────────────────────────────────────────────────
+
+type RiskConfidence = 'high' | 'low' | 'review' | 'not-evaluated';
+
+interface RiskAssessment {
+  confidence: RiskConfidence;
+  matchedTests: TestRecord[];   // every test whose title matched a pattern, any status
+  failureDetail?: string;       // set when confidence is 'low' or 'review'
+}
+
+function testMatchesRisk(title: string, patterns: Array<string | RegExp>): boolean {
+  return patterns.some(p => (typeof p === 'string' ? title.includes(p) : p.test(title)));
+}
+
+// Confidence is derived entirely from this run's actual results, never asserted in
+// advance. Skipped tests and Sentinel-side infrastructure failures (see
+// INFRA_ISSUE_MARKER) don't count as evidence either way — a risk whose only matched
+// tests were skipped or hit an infra issue is "not evaluated", not "high confidence".
+//
+// A passing Playwright test is not, by itself, proof a risk is mitigated: many tests
+// in this codebase (e.g. admin-order-search-isolation) deliberately log
+// [FINDING][critical|high] via console.error without a hard expect() — a soft-finding
+// convention used throughout this suite. securityFindings carries exactly those lines
+// (parsed in onTestEnd), keyed by the same testTitle used to match test patterns above.
+//
+// A matched test that passed but logged a critical/high finding is deliberately NOT
+// treated as 'low' (confirmed happening) — that finding might be a genuinely observed
+// violation, or it might be the same codebase's other common idiom: a setup/precondition
+// bail-out ("beforeAll did not capture real order IDs — cannot perform check") that means
+// the check never actually ran. Distinguishing those two cases from message text alone
+// would mean pattern-matching prose, which this project deliberately avoids building.
+// 'review' surfaces the finding without asserting which case it is — a human call, not
+// an inferred one.
+function assessRisk(entry: RiskEntry, tests: TestRecord[], securityFindings: FindingRecord[]): RiskAssessment {
+  const matchedTests = tests.filter(t => testMatchesRisk(t.title, entry.testPatterns));
+  const provingTests = matchedTests.filter(t => t.status !== 'skipped' && !t.isInfraIssue);
+
+  if (provingTests.length === 0) {
+    return { confidence: 'not-evaluated', matchedTests };
+  }
+
+  const failedTests = provingTests.filter(t => t.status === 'failed' || t.status === 'timedOut');
+  if (failedTests.length > 0) {
+    return {
+      confidence: 'low',
+      matchedTests,
+      failureDetail: failedTests[0].errorMessage ?? 'Test failed (no error message)',
+    };
+  }
+
+  const findingHits = securityFindings.filter(
+    f => (f.severity === 'critical' || f.severity === 'high') && testMatchesRisk(f.testTitle, entry.testPatterns),
+  );
+  if (findingHits.length > 0) {
+    return {
+      confidence: 'review',
+      matchedTests,
+      failureDetail: `[${findingHits[0].severity}] ${findingHits[0].message}`,
+    };
+  }
+
+  return { confidence: 'high', matchedTests };
+}
+
+function renderRiskCoverageSection(tests: TestRecord[], securityFindings: FindingRecord[], riskMap: RiskEntry[]): string {
+  if (riskMap.length === 0) return '';
+
+  const rows = riskMap.map(entry => {
+    const assessment = assessRisk(entry, tests, securityFindings);
+
+    const badge = assessment.confidence === 'high'
+      ? { cls: 'status-pass', label: 'High — confirmed' }
+      : assessment.confidence === 'low'
+        ? { cls: 'status-fail', label: 'Low — confirmed happening' }
+        : assessment.confidence === 'review'
+          ? { cls: 'status-warn', label: 'Passed with findings — review' }
+          : { cls: 'stat-skip', label: 'Not evaluated this run' };
+
+    const coveredHtml = assessment.matchedTests.length > 0
+      ? `<ul class="risk-covered-list">${assessment.matchedTests.map(t => {
+          const isPass = t.status === 'passed';
+          const isFail = t.status === 'failed' || t.status === 'timedOut';
+          const cls = isPass ? 'pass' : isFail ? 'fail' : '';
+          const icon = isPass ? '&#10003;' : isFail ? '&#10007;' : '&#8212;';
+          const testId = t.title.split(' — ')[0].trim();
+          return `<li class="risk-covered-item ${cls}">${icon} ${escapeHtml(testId)}</li>`;
+        }).join('')}</ul>`
+      : `<span class="risk-covered-empty">${escapeHtml(entry.testPatterns.map(p => (typeof p === 'string' ? p : p.source)).join(', '))} — not run this session</span>`;
+
+    const failureHtml = assessment.failureDetail
+      ? `<pre class="risk-failure-detail${assessment.confidence === 'review' ? ' risk-failure-detail--review' : ''}">${escapeHtml(assessment.failureDetail)}</pre>`
+      : '';
+
+    return `<tr>
+      <td class="risk-name">${escapeHtml(entry.risk)}</td>
+      <td class="risk-cause">${escapeHtml(entry.couldItHappen)}</td>
+      <td class="risk-covered">${coveredHtml}</td>
+      <td class="risk-confidence">
+        <span class="status-badge ${badge.cls}">${escapeHtml(badge.label)}</span>
+        <div class="risk-rationale">${escapeHtml(entry.confidenceRationale)}</div>
+        ${failureHtml}
+      </td>
+    </tr>`;
+  }).join('');
+
+  return `<section class="report-section">
+    <h2 class="section-heading">Risk Coverage</h2>
+    <p class="risk-intro">This table maps the documented business risks for this site to the tests that provide direct evidence for or against them. Confidence is computed from this run's actual pass/fail results, not asserted in advance — a risk shows "Not evaluated this run" whenever none of its covering tests ran this time (for example, a filtered <code>--grep</code> run), rather than falsely claiming coverage it doesn't have.</p>
+    <div class="risk-table-wrap">
+      <table class="risk-table">
+        <thead>
+          <tr><th>Risk</th><th>Could it happen?</th><th>Covered by</th><th>Confidence</th></tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
   </section>`;
 }
 
@@ -917,6 +1037,34 @@ details.test-list-details > summary::-webkit-details-marker { display: none; }
 .security-group-row { display: flex; align-items: flex-start; gap: 0.625rem; padding: 0.25rem 0; }
 .finding-msg { font-size: 0.845rem; font-weight: 500; color: #1e293b; line-height: 1.5; }
 
+/* ── Risk coverage ── */
+.risk-intro { font-size: 0.875rem; color: #334155; line-height: 1.7; margin-bottom: 1rem; }
+.risk-intro code { font-family: 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', monospace; font-size: 0.82em; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 0.1em 0.4em; }
+.risk-table-wrap { overflow-x: auto; }
+table.risk-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+table.risk-table th {
+  text-align: left; font-size: 0.62rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.1em; color: #94a3b8; padding: 0.6rem 0.75rem; border-bottom: 2px solid #e2e8f0;
+}
+table.risk-table td { padding: 0.85rem 0.75rem; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+table.risk-table tr:last-child td { border-bottom: none; }
+.risk-name { font-weight: 600; color: #1e293b; min-width: 170px; }
+.risk-cause { color: #475569; min-width: 220px; max-width: 320px; }
+.risk-covered { min-width: 180px; }
+.risk-covered-list { list-style: none; display: flex; flex-direction: column; gap: 0.3rem; }
+.risk-covered-item { font-family: 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', monospace; font-size: 0.74rem; }
+.risk-covered-item.pass { color: #15803d; }
+.risk-covered-item.fail { color: #b91c1c; }
+.risk-covered-empty { color: #94a3b8; font-style: italic; font-size: 0.78rem; }
+.risk-confidence { min-width: 220px; }
+.risk-rationale { color: #64748b; font-size: 0.76rem; margin-top: 0.4rem; line-height: 1.55; }
+.risk-failure-detail {
+  margin-top: 0.5rem; font-family: 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', monospace; font-size: 0.72rem;
+  background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 0.5rem 0.7rem; color: #7f1d1d;
+  white-space: pre-wrap; max-height: 140px; overflow-y: auto;
+}
+.risk-failure-detail--review { background: #fef3c7; border-color: #d97706; color: #92400e; }
+
 /* ── Footer ── */
 .report-footer { text-align: center; padding: 2rem 0 1rem; font-size: 0.75rem; color: #94a3b8; letter-spacing: 0.02em; }
 `;
@@ -1079,6 +1227,7 @@ class SentinelReporter implements Reporter {
 
   ${renderMetricStrip(allAuditFindings, this.securityFindings)}
   ${renderExecSummary(this.tests, this.auditResults, this.securityFindings, origin)}
+  ${renderRiskCoverageSection(this.tests, this.securityFindings, RISK_MAP)}
   ${renderTestSection(this.tests)}
   ${renderAuditSection(this.auditResults)}
   ${renderSecuritySection(this.securityFindings)}
