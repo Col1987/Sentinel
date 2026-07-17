@@ -144,11 +144,13 @@ async function main(): Promise<void> {
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    console.error(
-      'ANTHROPIC_API_KEY is not set. This workflow requires it as a GitHub Actions secret ' +
-        '(Settings → Secrets and variables → Actions) — see README.md.',
+    // Missing key means this feature hasn't been configured yet, not that this run
+    // failed — exit 0 so every commit doesn't show a red X until the secret is added.
+    // See README.md ("Commit review (AI)") for how to configure ANTHROPIC_API_KEY.
+    console.log(
+      'ANTHROPIC_API_KEY is not set — commit review is inactive until this secret is ' +
+        'configured (Settings → Secrets and variables → Actions). Skipping, not failing.',
     );
-    process.exitCode = 1;
     return;
   }
 

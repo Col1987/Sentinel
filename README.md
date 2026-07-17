@@ -232,7 +232,7 @@ This workflow requires the following secrets to be configured under the repo's *
 
 **Scope limitation — read this before trusting a clean result.** This review only ever sees the diff of the pushed commit(s). It cannot see cross-file usage, whether a changed function is called safely elsewhere in the codebase, whether it duplicates something in a file the diff doesn't touch, or whether it contradicts an earlier architectural decision made outside the diff. A clean result means "no obvious instance of the listed pattern types found in this diff" — it does not mean the change is broadly safe. The script prints this same caveat as a banner on every run, and the system prompt instructs Claude to phrase its own summary the same way, so this is never mistaken for a more thorough review than it actually is.
 
-Requires `ANTHROPIC_API_KEY` configured as a GitHub Actions secret (**Settings → Secrets and variables → Actions**) — the same key already used locally by `npm run review` (see "Post-debugging diff review" below), now also required in CI for this workflow specifically. Without it, the check fails with a clear error rather than silently skipping.
+Requires `ANTHROPIC_API_KEY` configured as a GitHub Actions secret (**Settings → Secrets and variables → Actions**) — the same key already used locally by `npm run review` (see "Post-debugging diff review" below), now also required in CI for this workflow specifically. Until that secret is added, the workflow treats itself as intentionally disabled rather than broken: it logs that commit review is inactive and exits 0, so commits are never blocked or shown with a failing check just because the feature hasn't been configured yet.
 
 ## Development approach
 
