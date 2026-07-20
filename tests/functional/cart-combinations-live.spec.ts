@@ -158,6 +158,42 @@ async function adminLogin(page: Page): Promise<void> {
   );
 }
 
+// Filter term for the admin orders search box. Confirmed live (diagnostic, 2026-07-17):
+// #filter-search's placeholder says "Search by customer, property or waybill" and its
+// oninput handler (filterOrders() -> renderOrders(filterCurrent())) genuinely narrows
+// the rendered rows -- but only by customer NAME, not email (searching a real, unique,
+// never-matching email against a fully-loaded table returned 0 rows; searching this name
+// returned 239 of 257). registerForCheckout always registers the customer as this exact
+// name (see #reg-firstname/#reg-lastname fills above), matching the proven pattern
+// already used by #filter-search in checkout-live.spec.ts, order-lifecycle-helpers.ts,
+// welcome-page-live.spec.ts, and checkout-abuse-live.spec.ts.
+const ADMIN_SEARCH_NAME = 'SENTINEL CHECKOUT';
+
+// Waits for the admin orders table's real data to finish loading. #orders-body renders a
+// single placeholder row immediately after login/refresh, then the real (possibly
+// hundreds-strong) order list replaces it asynchronously -- confirmed live to take up to
+// ~8s. Filtering or scanning before this settles is unreliable two different ways: the
+// filter's oninput handler operates on whatever is already loaded, so applying it before
+// the real data arrives is a silent no-op (confirmed live: 1 row before settling vs. a
+// correctly-narrowed count once the table had genuinely finished loading); and scanning
+// row locators while the table is still being constructed races the site's own render,
+// which is what caused individual rows to hit their full 5s actionability timeout one at
+// a time in the original bug (rows beyond ~45 each cost the full 5s while the real list
+// was still settling underneath the scan). This is the same category CLAUDE.md's
+// "Reading form/DOM state immediately after navigation or reload" entry already covers,
+// applied to the admin orders table specifically.
+async function waitForOrdersTableToSettle(page: Page, timeoutMs = 15_000): Promise<void> {
+  let lastCount = -1;
+  let stableChecks = 0;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline && stableChecks < 2) {
+    const count = await page.locator('#orders-body tr').count();
+    stableChecks = (count === lastCount && count > 1) ? stableChecks + 1 : 0;
+    lastCount = count;
+    await page.waitForTimeout(1_000);
+  }
+}
+
 // Finds an order in the admin orders table by buyer email, clicks View, and
 // returns the modal text content. Returns null if not found within timeoutMs.
 async function findOrderByEmail(
@@ -165,8 +201,6 @@ async function findOrderByEmail(
   email: string,
   timeoutMs: number,
 ): Promise<string | null> {
-  await page.waitForTimeout(2_000);
-
   const searchInput = page.locator('#filter-search');
   const searchVisible = await searchInput
     .waitFor({ state: 'visible', timeout: 15_000 })
@@ -177,7 +211,12 @@ async function findOrderByEmail(
     return null;
   }
 
-  await searchInput.fill(email, { timeout: 10_000 });
+  // Filter down to Sentinel-created rows BEFORE iterating, instead of scanning the full
+  // unfiltered table — see ADMIN_SEARCH_NAME and waitForOrdersTableToSettle above for why
+  // both the settle-wait and the name (not email) search term are required for this to
+  // actually narrow anything.
+  await waitForOrdersTableToSettle(page);
+  await searchInput.fill(ADMIN_SEARCH_NAME, { timeout: 10_000 });
   await page.waitForTimeout(1_500);
 
   const deadline = Date.now() + timeoutMs;
@@ -194,8 +233,13 @@ async function findOrderByEmail(
         }
       }
     }
+    // refreshOrders() reloads the table asynchronously the same way the initial load
+    // does — wait for it to settle again and re-apply the filter, or the retry pass
+    // scans the full unfiltered table just like the original bug.
     await page.locator('#orders-refresh-btn').click({ timeout: 5_000 }).catch(() => {});
-    await page.waitForTimeout(3_000);
+    await waitForOrdersTableToSettle(page);
+    await searchInput.fill(ADMIN_SEARCH_NAME, { timeout: 10_000 }).catch(() => {});
+    await page.waitForTimeout(1_500);
   }
 
   return null;
@@ -227,10 +271,21 @@ test.describe('Cart combinations', { tag: ['@functional'] }, () => {
   test(
     'multiple-packs-single-checkout — add two packs, complete one checkout, verify total and both packs appear in admin',
     async ({ page }) => {
-      // 2-item checkout: register(15s) + fillConfig×2(60s) + pay(10s)
-      //   + signOut(10s) + adminLogin(30s) + findOrder(15s) ≈ 140 s.
-      // 150 s matches the representative-checkout budget — single iteration, no loop.
-      test.setTimeout(150_000);
+      // 2-item checkout, no Wi-Fi config: register+verify(~15s) + fillConfig×2(~102-125s —
+      // the dominant phase; each item cycles through several sequential sub-steps at
+      // ~0.8-1.5s each — branding, house rules, restaurants, activities, Quick Setup —
+      // independent of Wi-Fi) + billing+pay(~25s) + redirect+adminLogin(~10s) +
+      // findOrderByEmail(~10-20s, now filtered by customer name against settled table
+      // data, see waitForOrdersTableToSettle) ≈ 195s worst case.
+      // Re-derived 2026-07-17 from live trace data after fixing findOrderByEmail's
+      // unfiltered full-table scan (previously a linear scan through the entire admin
+      // orders table, which had grown to 250+ rows) — the old 150s budget had ~0s of
+      // real margin post-fix and failed by 0.3s in verification. 200s matches the real
+      // total needed by wifi-config-per-item, a strictly heavier version of this same
+      // flow (same config loop plus Wi-Fi setup for one item) proven to complete in
+      // 149.1s against this same 200s ceiling — so this lighter test has at least as
+      // much genuine headroom.
+      test.setTimeout(200_000);
       test.info().annotations.push({
         type: 'description',
         description:
@@ -357,10 +412,19 @@ test.describe('Cart combinations', { tag: ['@functional'] }, () => {
   test(
     'wifi-config-per-item — configure Wi-Fi for item 1 only and verify per-item vs cart-level behaviour on the welcome page',
     async ({ page }) => {
-      // 2-item checkout (or 1 if cart is single-item): register(15s) + fillConfig×2(60s) + pay(10s)
-      //   + signOut(10s) + adminLogin(30s) + findOrder(15s) + welcome page(15s) ≈ 155 s.
-      // 200 s gives ~45 s headroom — admin lookup + welcome page navigation together
-      // exceeded 150 s in observed runs despite correct test logic.
+      // 2-item checkout, Wi-Fi configured for item 1 only: register+verify(~15s) +
+      // fillConfig×2(~125s — the dominant phase; each item cycles through several
+      // sequential sub-steps at ~0.8-1.5s each — branding, house rules, restaurants,
+      // activities, Quick Setup — plus Wi-Fi entry for item 1) +
+      // pay+redirect+adminLogin(~15s) + findOrderByEmail(~10s, now filtered by customer
+      // name against settled table data, see waitForOrdersTableToSettle) + welcome page
+      // navigation+check(~5s) ≈ 170s worst case.
+      // Re-derived 2026-07-17 from live trace data — the previous version of this
+      // comment badly underestimated fillConfig (60s estimated vs ~125s observed) while
+      // overestimating signOut+adminLogin (40s estimated vs ~15s observed); the two
+      // errors happened to roughly cancel out in the total, but the internal math was
+      // wrong. Confirmed live at 149.1s actual against this 200s budget (50.9s of
+      // genuine headroom) after fixing findOrderByEmail's unfiltered full-table scan.
       test.setTimeout(200_000);
       test.info().annotations.push({
         type: 'description',
