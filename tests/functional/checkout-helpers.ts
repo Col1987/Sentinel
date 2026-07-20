@@ -84,6 +84,12 @@ export async function registerForCheckout(
 }
 
 export async function addPackAndGoToCheckout(page: Page, packId: string = PACK_ID): Promise<void> {
+  // registerForCheckout uses waitUntil:'domcontentloaded' — addToCart may not be in scope yet.
+  await page.waitForFunction(
+    () => typeof (window as any).addToCart === 'function',
+    undefined,
+    { timeout: 10_000 },
+  ).catch(() => {});
   await page.evaluate((id: string) => (window as any).addToCart(id), packId);
   await page.waitForTimeout(600);
   await page.goto('/checkout.html', { waitUntil: 'domcontentloaded' });
