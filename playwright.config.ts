@@ -20,7 +20,7 @@ export default defineConfig({
   ],
   use: {
     baseURL: defaultSite.baseUrl,
-    trace: 'on-first-retry',
+    trace: 'retain-on-failure',
   },
   projects: [
     {

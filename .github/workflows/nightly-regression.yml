@@ -45,3 +45,13 @@ jobs:
           name: sentinel-nightly-regression-${{ github.run_number }}
           path: reports/*.html
           retention-days: 30
+
+      - name: Upload traces
+        # trace: 'retain-on-failure' (playwright.config.ts) only writes trace.zip for
+        # failed tests, so this only has anything to upload when the suite fails.
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sentinel-nightly-regression-traces-${{ github.run_number }}
+          path: test-results/**/trace.zip
+          retention-days: 30
