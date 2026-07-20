@@ -13,6 +13,22 @@ const GUEST_B    = `${TEST_NAME_PREFIX} BOUNDARY B`;
 const PROPERTY_A = 'Sentinel Boundary Alpha';
 const PROPERTY_B = 'Sentinel Boundary Beta';
 
+// Distinct REGISTERED ACCOUNT names (not just the GUEST_A/GUEST_B recipient names above,
+// which only populate #cfg-guest in the config step). #filter-search matches on the
+// account's registered name, and registerForCheckout()'s default 'SENTINEL'/'CHECKOUT'
+// is identical for both customers — which would make admin-order-search-isolation
+// structurally unable to distinguish A from B. Passed as the override param added to
+// registerForCheckout() specifically for this case.
+//
+// No hyphen: confirmed live (diagnostic, 2026-07-20) that the registration form silently
+// strips non-letter characters from #reg-lastname — 'BOUNDARY-A' is stored/rendered as
+// 'BOUNDARYA', so a search term containing the hyphen never matches the real row. Letters
+// only, or the fix looks correct but the admin lookup silently finds nothing.
+const ACCOUNT_A = { first: 'SENTINEL', last: 'BOUNDARYA' };
+const ACCOUNT_B = { first: 'SENTINEL', last: 'BOUNDARYB' };
+const ADMIN_SEARCH_NAME_A = `${ACCOUNT_A.first} ${ACCOUNT_A.last}`;
+const ADMIN_SEARCH_NAME_B = `${ACCOUNT_B.first} ${ACCOUNT_B.last}`;
+
 // ── Local helpers ─────────────────────────────────────────────────────────────
 
 // Proven pattern from cart-combinations-live.spec.ts (signOutCurrentUser).
@@ -68,6 +84,25 @@ async function adminLogin(page: Page): Promise<void> {
     undefined,
     { timeout: 60_000 },
   );
+}
+
+// Waits for the admin orders table's real data to finish loading. #orders-body renders a
+// single placeholder row immediately after login/refresh, then the real order list
+// replaces it asynchronously — confirmed live to take up to ~8s. Filtering or scanning
+// before this settles is unreliable: the filter's oninput handler operates on whatever is
+// already loaded (silent no-op before real data arrives), and scanning rows mid-render
+// races the site's own DOM construction. Proven pattern from
+// tests/functional/cart-combinations-live.spec.ts (findOrderByEmail).
+async function waitForOrdersTableToSettle(page: Page, timeoutMs = 15_000): Promise<void> {
+  let lastCount = -1;
+  let stableChecks = 0;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline && stableChecks < 2) {
+    const count = await page.locator('#orders-body tr').count();
+    stableChecks = (count === lastCount && count > 1) ? stableChecks + 1 : 0;
+    lastCount = count;
+    await page.waitForTimeout(1_000);
+  }
 }
 
 // Custom variant of fillConfigStep (checkout-helpers.ts) that accepts a guest name
@@ -166,8 +201,9 @@ async function checkoutAs(
   page: Page,
   guestName: string,
   propertyName: string,
+  accountName: { first: string; last: string },
 ): Promise<{ email: string; orderId: string | null }> {
-  const email = await registerForCheckout(page);
+  const email = await registerForCheckout(page, accountName);
 
   // registerForCheckout uses waitUntil:'domcontentloaded' — addToCart may not be in scope yet.
   await page.waitForFunction(
@@ -308,13 +344,13 @@ test.describe('Data boundary — cross-customer isolation', { tag: ['@security']
     try {
       // ── Customer A ──
       console.log('[INFO] data-boundary beforeAll: creating order for customer A...');
-      const resultA = await checkoutAs(page, GUEST_A, PROPERTY_A);
+      const resultA = await checkoutAs(page, GUEST_A, PROPERTY_A, ACCOUNT_A);
       customerA = { ...resultA, welcomeUrl: null };
       await signOutCurrentUser(page);
 
       // ── Customer B ──
       console.log('[INFO] data-boundary beforeAll: creating order for customer B...');
-      const resultB = await checkoutAs(page, GUEST_B, PROPERTY_B);
+      const resultB = await checkoutAs(page, GUEST_B, PROPERTY_B, ACCOUNT_B);
       customerB = { ...resultB, welcomeUrl: null };
       await signOutCurrentUser(page);
 
@@ -334,7 +370,7 @@ test.describe('Data boundary — cross-customer isolation', { tag: ['@security']
       // null and letting the hard-fail below fire unnecessarily.
       if (!customerA.orderId) {
         console.log('[INFO] data-boundary beforeAll: CF response omitted A\'s orderId — recovering via admin lookup by email...');
-        const recoveredA = await findAndOpenOrderInAdmin(page, customerA.email, null);
+        const recoveredA = await findAndOpenOrderInAdmin(page, customerA.email, null, ADMIN_SEARCH_NAME_A);
         if (recoveredA) {
           customerA.orderId = recoveredA;
           await closeOrderModal(page);
@@ -343,7 +379,7 @@ test.describe('Data boundary — cross-customer isolation', { tag: ['@security']
       }
       if (!customerB.orderId) {
         console.log('[INFO] data-boundary beforeAll: CF response omitted B\'s orderId — recovering via admin lookup by email...');
-        const recoveredB = await findAndOpenOrderInAdmin(page, customerB.email, null);
+        const recoveredB = await findAndOpenOrderInAdmin(page, customerB.email, null, ADMIN_SEARCH_NAME_B);
         if (recoveredB) {
           customerB.orderId = recoveredB;
           await closeOrderModal(page);
@@ -494,13 +530,15 @@ test.describe('Data boundary — cross-customer isolation', { tag: ['@security']
     test.info().annotations.push({
       type: 'description',
       description:
-        'Uses the two real orders created in beforeAll (customer A and customer B). ' +
-        'Logs in as admin, enters customer A\'s exact email in the order search filter, ' +
-        'and verifies that customer B\'s email does not appear in any result row. ' +
-        'Repeats the check in reverse — searching for B must not surface A\'s order. ' +
-        'If a search scoped to one customer\'s email returns another customer\'s order, ' +
-        'it indicates the admin search is OR-based or unscoped, which could expose ' +
-        'one customer\'s data to an admin filtering for a different customer.',
+        'Uses the two real orders created in beforeAll (customer A and customer B), each ' +
+        'registered under a distinct account name so the admin search can scope to one ' +
+        'of them at a time — #filter-search only matches by customer name, not email. ' +
+        'Logs in as admin, searches for customer A\'s registered name, and verifies that ' +
+        'customer B\'s email does not appear in any result row. Repeats the check in ' +
+        'reverse — searching for B must not surface A\'s order. If a search scoped to one ' +
+        'customer\'s name returns another customer\'s order, it indicates the admin search ' +
+        'is OR-based or unscoped, which could expose one customer\'s data to an admin ' +
+        'filtering for a different customer.',
     });
 
     if (!customerA.email || !customerB.email) {
@@ -515,14 +553,23 @@ test.describe('Data boundary — cross-customer isolation', { tag: ['@security']
     await adminLogin(page);
     await page.waitForTimeout(1_500);
 
+    // Search term corrected from email to name: #filter-search only matches customer
+    // NAME (not email) — confirmed live (see cart-combinations-live.spec.ts
+    // findOrderByEmail fix). customerA and customerB now register under distinct
+    // ACCOUNT_A/ACCOUNT_B names specifically so this search can actually scope to one
+    // customer at a time — searching a name shared by both would trivially return both
+    // and make this check meaningless (confirmed live before this fix: both directions
+    // fired a false-positive [FINDING][high] when both accounts shared 'SENTINEL CHECKOUT').
     const searchAndCheckIsolation = async (
+      searchName: string,
       searchEmail: string,
       forbiddenEmail: string,
       label: string,
     ): Promise<void> => {
       await page.locator('#filter-search').fill('').catch(() => {});
       await page.waitForTimeout(500);
-      await page.locator('#filter-search').fill(searchEmail).catch(() => {});
+      await waitForOrdersTableToSettle(page);
+      await page.locator('#filter-search').fill(searchName).catch(() => {});
       await page.waitForTimeout(2_000);
 
       const rows = await page.locator('#orders-body tr').all();
@@ -544,6 +591,8 @@ test.describe('Data boundary — cross-customer isolation', { tag: ['@security']
       if (!searchEmailFound) {
         // May just mean the order hasn't appeared yet — try a refresh
         await page.locator('#orders-refresh-btn').click().catch(() => {});
+        await waitForOrdersTableToSettle(page);
+        await page.locator('#filter-search').fill(searchName).catch(() => {});
         await page.waitForTimeout(2_000);
         const refreshedRows = await page.locator('#orders-body tr').all();
         for (const row of refreshedRows) {
@@ -562,11 +611,11 @@ test.describe('Data boundary — cross-customer isolation', { tag: ['@security']
       }
     };
 
-    // A's email search must not surface B's order
-    await searchAndCheckIsolation(customerA.email, customerB.email, 'searching A, checking B excluded');
+    // A's name search must not surface B's order
+    await searchAndCheckIsolation(ADMIN_SEARCH_NAME_A, customerA.email, customerB.email, 'searching A, checking B excluded');
 
-    // B's email search must not surface A's order
-    await searchAndCheckIsolation(customerB.email, customerA.email, 'searching B, checking A excluded');
+    // B's name search must not surface A's order
+    await searchAndCheckIsolation(ADMIN_SEARCH_NAME_B, customerB.email, customerA.email, 'searching B, checking A excluded');
 
     console.log('[INFO] admin-order-search-isolation: search isolation check complete');
   });

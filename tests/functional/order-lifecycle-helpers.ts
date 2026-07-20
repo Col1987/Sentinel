@@ -75,10 +75,43 @@ export async function verifyStatusPersisted(
   }
 }
 
+// Waits for the admin orders table's real data to finish loading. #orders-body renders a
+// single placeholder row immediately after login/refresh, then the real (possibly
+// hundreds-strong) order list replaces it asynchronously — confirmed live to take up to
+// ~8s. Filtering or scanning before this settles is unreliable two different ways: the
+// filter's oninput handler (filterOrders() -> renderOrders(filterCurrent())) operates on
+// whatever is already loaded, so applying it before the real data arrives is a silent
+// no-op; and scanning row locators while the table is still being constructed races the
+// site's own render, causing individual rows to hit their full 5s actionability timeout
+// one at a time. See the original diagnosis and proof in
+// tests/functional/cart-combinations-live.spec.ts (findOrderByEmail).
+async function waitForOrdersTableToSettle(page: Page, timeoutMs = 15_000): Promise<void> {
+  let lastCount = -1;
+  let stableChecks = 0;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline && stableChecks < 2) {
+    const count = await page.locator('#orders-body tr').count();
+    stableChecks = (count === lastCount && count > 1) ? stableChecks + 1 : 0;
+    lastCount = count;
+    await page.waitForTimeout(1_000);
+  }
+}
+
 // Finds the test order in the admin orders list and opens its detail modal.
 // Returns the orderId read from the modal DOM so subsequent helpers can use it.
-export async function findAndOpenOrderInAdmin(page: Page, checkoutEmail: string, cfOrderId: string | null): Promise<string | null> {
-  await page.waitForTimeout(2_000); // allow Firestore orders query on page load
+//
+// searchName defaults to 'SENTINEL CHECKOUT' — the name registerForCheckout() fills by
+// default, and what every other caller of this shared helper registers under. Only pass
+// an override when the caller registered its account under a different name (e.g.
+// data-boundary-live.spec.ts's ACCOUNT_A/ACCOUNT_B, needed for admin-order-search-isolation
+// to be able to distinguish two test customers by name).
+export async function findAndOpenOrderInAdmin(
+  page: Page,
+  checkoutEmail: string,
+  cfOrderId: string | null,
+  searchName = 'SENTINEL CHECKOUT',
+): Promise<string | null> {
+  await page.waitForTimeout(2_000); // allow the admin page itself to finish loading
 
   // Prefer opening directly by ID when the CF gave us one
   if (cfOrderId) {
@@ -96,8 +129,12 @@ export async function findAndOpenOrderInAdmin(page: Page, checkoutEmail: string,
     }
   }
 
-  // Fallback: search by customer name, scan rows for the checkout email
-  await page.locator('#filter-search').fill('SENTINEL CHECKOUT');
+  // Filter down to Sentinel-created rows BEFORE scanning, instead of scanning the full
+  // unfiltered table — requires the table's real (async-loaded) data to have settled
+  // first, or the filter is a silent no-op (see waitForOrdersTableToSettle above).
+  const searchInput = page.locator('#filter-search');
+  await waitForOrdersTableToSettle(page);
+  await searchInput.fill(searchName);
   await page.waitForTimeout(1_500);
 
   const deadline = Date.now() + 30_000;
@@ -118,8 +155,13 @@ export async function findAndOpenOrderInAdmin(page: Page, checkoutEmail: string,
         }
       }
     }
+    // refreshOrders() reloads the table asynchronously the same way the initial load
+    // does — wait for it to settle again and re-apply the filter, or this retry pass
+    // scans the full unfiltered table just like the original bug.
     await page.locator('#orders-refresh-btn').click();
-    await page.waitForTimeout(2_000);
+    await waitForOrdersTableToSettle(page);
+    await searchInput.fill(searchName).catch(() => {});
+    await page.waitForTimeout(1_500);
   }
 
   return null;

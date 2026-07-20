@@ -50,14 +50,24 @@ export function dateFromCheckinBase(daysOffset: number): string {
 
 // Registers a fresh non-admin Firebase account and returns the email used.
 // Admin accounts redirect from / to /admin.html, making addToCart unreachable.
-export async function registerForCheckout(page: Page): Promise<string> {
+//
+// name defaults to 'SENTINEL'/'CHECKOUT' — every existing call site relies on this fixed
+// name (it's the term #filter-search results are matched against elsewhere in the suite,
+// e.g. cart-combinations-live.spec.ts's findOrderByEmail). Only pass an override when a
+// test genuinely needs multiple distinguishable accounts in the admin orders table — see
+// data-boundary-live.spec.ts's ACCOUNT_A/ACCOUNT_B, needed so admin-order-search-isolation
+// can search for one test customer without structurally matching the other.
+export async function registerForCheckout(
+  page: Page,
+  name: { first: string; last: string } = { first: 'SENTINEL', last: 'CHECKOUT' },
+): Promise<string> {
   const email = testEmail(`checkout-${Date.now()}`);
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.locator('#btn-login').click();
   await page.locator('a:has-text("Register")').click();
   await page.locator('#reg-firstname').waitFor({ state: 'visible', timeout: 5_000 });
-  await page.locator('#reg-firstname').fill('SENTINEL');
-  await page.locator('#reg-lastname').fill('CHECKOUT');
+  await page.locator('#reg-firstname').fill(name.first);
+  await page.locator('#reg-lastname').fill(name.last);
   await page.locator('#reg-email').fill(email);
   await page.locator('#reg-mobile-num').fill('821234567');
   await page.locator('#reg-password').fill('Test@12345!');
