@@ -243,6 +243,8 @@ Requires `ANTHROPIC_API_KEY` configured as a GitHub Actions secret (**Settings �
 
 This project was built using a CLAUDE.md-driven workflow with Claude Code in VS Code for implementation and Claude (chat) for architectural design, test planning, and code review. The CLAUDE.md file in the project root provides Claude Code with the project context, conventions, and hard rules it needs to produce consistent output.
 
+Alongside CLAUDE.md, this project also uses Claude Code project skills (`.claude/skills/`) for packaging reusable procedures rather than standing context. Currently one skill exists — `investigate-hang` — which packages the diagnostic-first investigation sequence for slow or timing-out tests: check known bug patterns before assuming something new, fix infrastructure causes and re-run before trusting the assertion underneath, and respect the debugging circuit breaker.
+
 Key design decisions:
 - Auditors report findings without failing the pipeline. The report is where findings live.
 - Tests fail hard when expected elements are missing (not graceful skip) because a missing element is either a site change or a wrong selector, both of which need investigation.

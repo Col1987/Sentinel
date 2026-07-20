@@ -97,6 +97,14 @@ Before writing a new fix for a recurring category of problem, check whether this
 
 Add new entries to this list whenever a genuinely reusable fix is found for a category of problem (not a one-off), so future debugging starts from what's already known to work rather than rediscovering it live.
 
+### When to package a procedure as a project skill
+
+This doesn't replace the rule above — it adds a second option alongside it, distinguished by shape. A Known-working-patterns entry documents a single fact or fix for a recurring bug category (a symptom → cause → fix pointer, read as reference prose when that symptom comes up again). When what emerges during a session is instead a genuinely repeatable, procedural *investigation or fix sequence* — an ordered set of steps someone (or Claude) should actually follow, not a one-off — consider packaging it as a project skill under `.claude/skills/` rather than leaving it only as prose to be manually re-applied each time. A skill gets invoked directly when its trigger matches, instead of relying on someone remembering to re-read and re-apply a paragraph.
+
+The first example: `investigate-hang` (`.claude/skills/investigate-hang/SKILL.md`), which packages the diagnostic-first investigation sequence for slow/timing-out tests (check known bug patterns before assuming something new, fix infrastructure and re-run before trusting the assertion underneath, respect the debugging circuit breaker below) as a directly-invokable procedure.
+
+This convention governs when NEW skills should be proposed going forward. It is distinct from README.md's mention of skills, which only tells anyone browsing the repo that skills are in use and what currently exists — not when new ones get created.
+
 ### Debugging circuit breaker
 
 If a single test has required more than 2 consecutive live-debugging fixes in one session (patch → run → still broken → patch again) without reaching a clean pass, STOP immediately. Do not attempt a third patch. Instead:
