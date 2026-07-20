@@ -1,6 +1,11 @@
 # Sentinel
 
-An AI-powered website testing framework that runs against any site to identify risks, defects, accessibility issues, and workflow gaps. Built with Playwright and TypeScript.
+An AI-powered website testing framework that identifies risks, defects, accessibility issues, and workflow gaps. Built with Playwright and TypeScript.
+
+Coverage today has two tiers:
+
+- **Site-agnostic (works against any target now):** the auditor modules — accessibility, SEO, code quality, discovery, and broken links (`src/auditors/`) — run in safe mode against any site with no configuration beyond pointing `baseUrl` (`src/config/sites.ts`) at it. No selectors, no journey definitions, no site-specific setup.
+- **JuelHaus-specific today:** the business-flow journey tests (checkout, admin, auth), the Firebase-specific known-working-patterns in `CLAUDE.md`, and the admin/checkout page object selectors are all built against juelhaus.co.za's actual DOM and backend. Pointing Sentinel's business-flow tests at a different site would require writing new selectors and journey configs for that site's specific pages and flows — the runner, reporter, and risk-mapping engine underneath are reusable, but the flow definitions themselves are not automatic.
 
 Currently targeting [juelhaus.co.za](https://www.juelhaus.co.za) as the first test subject (owner permission granted).
 
@@ -8,7 +13,7 @@ Currently targeting [juelhaus.co.za](https://www.juelhaus.co.za) as the first te
 
 Sentinel combines automated auditing with targeted flow testing to produce a professional HTML report. One command runs the full suite and generates a branded, client-ready document with findings grouped by severity, plain-English explanations, and fix guidance.
 
-The framework is designed to work against any website. Site-specific test configuration (URLs, selectors, journey definitions) is separated from the core engine so the same auditors and runner can be pointed at a new target with minimal setup.
+The core engine — auditors, journey runner, reporter, risk mapping — is designed to work against any website, with site-specific configuration (URLs, selectors, journey definitions) kept separate from it. What that portability buys you today is exactly the site-agnostic tier above: the auditors run against a new target immediately, while business-flow journeys need new selectors and configs written for that target's actual pages before they can run.
 
 ## Architecture
 
@@ -185,7 +190,7 @@ ADMIN_PASSWORD=your-admin-password
 SENTINEL_LIVE_MODE=false
 ```
 
-The target site is configured in `src/config/sites.ts`. Change `baseUrl` to point at a different site.
+The target site is configured in `src/config/sites.ts`. Changing `baseUrl` is enough to point the auditor modules (accessibility, SEO, code quality, discovery, broken links) at a different site. The business-flow journey tests, admin/checkout page objects, and Firebase-specific patterns in `CLAUDE.md` are built against juelhaus.co.za's actual DOM — targeting a different site's business flows needs new selectors and journey configs, not just a `baseUrl` change. See the coverage note at the top of this README.
 
 ### Running tests
 
