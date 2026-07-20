@@ -170,7 +170,7 @@ Everything else this auditor checks for came back clean: no phantom asset refere
 
 ## 9. QA Checklist Coverage
 
-Mapped directly against your original `QA_CHECKLIST.md`, organised by how thoroughly each section is currently covered by automated testing.
+Mapped directly against your original [`QA_CHECKLIST.md`](./QA_CHECKLIST.md), organised by how thoroughly each section is currently covered by automated testing.
 
 ### High coverage
 

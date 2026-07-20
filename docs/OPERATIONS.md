@@ -12,7 +12,7 @@ Safe mode (`SENTINEL_LIVE_MODE=false`, the default) — smoke, functional, secur
 
 - **Firebase Cloud Functions:** a full run triggers on the order of a handful to low-teens real invocations — one checkout (`createOrder`), a couple of admin status advances, plus whatever the site's own backend triggers off those writes (e.g. confirmation email send). Sentinel doesn't independently meter this — treat it as an order-of-magnitude estimate, not a billed total pulled from GCP.
 - **Gmail API:** polled every 3s (`POLL_INTERVAL_MS`) up to 30s for verification-email checks and up to 60s for order-confirmation-email checks (`POLL_TIMEOUT_MS` / `ORDER_POLL_TIMEOUT_MS` in `src/utils/gmail.ts`) — at most ~10–20 `messages.list` calls per check, fewer if the email arrives early. Gmail API's default quota is generous relative to this volume; it is not a practical constraint at current test count.
-- **GitHub Actions runner minutes:** `playwright.config.ts` forces `workers: 1` whenever `SENTINEL_LIVE_MODE=true` (real backend + shared admin account — see CLAUDE.md), so LIVE_MODE runs are strictly sequential, not parallelized for speed. The full suite (safe-mode audit + LIVE_MODE regression) currently takes **~47 minutes** end-to-end in CI under this constraint.
+- **GitHub Actions runner minutes:** `playwright.config.ts` forces `workers: 1` whenever `SENTINEL_LIVE_MODE=true` (real backend + shared admin account — see [CLAUDE.md](../CLAUDE.md)), so LIVE_MODE runs are strictly sequential, not parallelized for speed. The full suite (safe-mode audit + LIVE_MODE regression) currently takes **~47 minutes** end-to-end in CI under this constraint.
 
 ## Commit review workflow (optional, Anthropic API)
 
