@@ -253,14 +253,19 @@ async function getWelcomeUrlFromAdmin(
   email: string,
   orderId: string | null,
   label: string,
+  searchName: string,
 ): Promise<string | null> {
   await page.waitForTimeout(2_000);
 
+  // Explicit timeout — confirmed live (2026-07-21, Playwright trace) that a bare
+  // getAttribute() with no timeout will wait unbounded when the filtered locator matches
+  // zero elements (e.g. the modal never actually rendered), consuming the entire
+  // beforeAll's remaining budget silently instead of failing fast.
   const tryExtractUrl = async (): Promise<string | null> =>
     page
       .locator('#order-modal a')
       .filter({ hasText: 'Welcome Page' })
-      .getAttribute('href')
+      .getAttribute('href', { timeout: 5_000 })
       .catch(() => null);
 
   const closeModal = async () => {
@@ -272,18 +277,31 @@ async function getWelcomeUrlFromAdmin(
     await page.evaluate((id: string) => {
       if ((window as any).viewOrder) (window as any).viewOrder(id);
     }, orderId);
-    await page.locator('#order-modal').waitFor({ state: 'visible', timeout: 8_000 }).catch(() => {});
-    await page.waitForTimeout(800);
-    const href = await tryExtractUrl();
-    await closeModal();
-    if (href) {
-      console.log(`[INFO] ${label}: welcome URL (direct open): ${href}`);
-      return href;
+    const modalVisible = await page.locator('#order-modal').waitFor({ state: 'visible', timeout: 8_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (!modalVisible) {
+      console.log(
+        `[INFO] ${label}: order modal did not become visible for direct-ID open (orderId=${orderId}) ` +
+          '— skipping URL extraction against an absent modal, falling back to search.',
+      );
+    } else {
+      await page.waitForTimeout(800);
+      const href = await tryExtractUrl();
+      await closeModal();
+      if (href) {
+        console.log(`[INFO] ${label}: welcome URL (direct open): ${href}`);
+        return href;
+      }
     }
   }
 
-  // Fallback: search by email
-  await page.locator('#filter-search').fill(email).catch(() => {});
+  // Fallback: filter down by name BEFORE scanning, instead of scanning the full unfiltered
+  // table — #filter-search matches on customer name, not email (confirmed live, see
+  // cart-combinations-live.spec.ts's findOrderByEmail), and requires the table's real
+  // (async-loaded) data to have settled first or the filter is a silent no-op.
+  await waitForOrdersTableToSettle(page);
+  await page.locator('#filter-search').fill(searchName).catch(() => {});
   await page.waitForTimeout(1_500);
 
   const deadline = Date.now() + 20_000;
@@ -293,7 +311,16 @@ async function getWelcomeUrlFromAdmin(
       const rowText = await row.textContent().catch(() => '');
       if (rowText?.includes(email)) {
         await row.locator('button:has-text("View")').click().catch(() => {});
-        await page.locator('#order-modal').waitFor({ state: 'visible', timeout: 8_000 }).catch(() => {});
+        const modalVisible = await page.locator('#order-modal').waitFor({ state: 'visible', timeout: 8_000 })
+          .then(() => true)
+          .catch(() => false);
+        if (!modalVisible) {
+          console.log(
+            `[INFO] ${label}: order modal did not become visible after search-result click — ` +
+              'cannot extract welcome URL for this order, skipping extraction against an absent modal.',
+          );
+          return null;
+        }
         await page.waitForTimeout(800);
         const href = await tryExtractUrl();
         await closeModal();
@@ -305,7 +332,9 @@ async function getWelcomeUrlFromAdmin(
       }
     }
     await page.locator('#orders-refresh-btn').click().catch(() => {});
-    await page.waitForTimeout(2_000);
+    await waitForOrdersTableToSettle(page);
+    await page.locator('#filter-search').fill(searchName).catch(() => {});
+    await page.waitForTimeout(1_500);
   }
 
   return null;
@@ -400,11 +429,11 @@ test.describe('Data boundary — cross-customer isolation', { tag: ['@security']
         );
       }
 
-      customerA.welcomeUrl = await getWelcomeUrlFromAdmin(page, customerA.email, customerA.orderId, 'setup/A');
+      customerA.welcomeUrl = await getWelcomeUrlFromAdmin(page, customerA.email, customerA.orderId, 'setup/A', ADMIN_SEARCH_NAME_A);
       // Clear search before looking up B to prevent stale filter showing A's row.
       await page.locator('#filter-search').fill('').catch(() => {});
       await page.waitForTimeout(500);
-      customerB.welcomeUrl = await getWelcomeUrlFromAdmin(page, customerB.email, customerB.orderId, 'setup/B');
+      customerB.welcomeUrl = await getWelcomeUrlFromAdmin(page, customerB.email, customerB.orderId, 'setup/B', ADMIN_SEARCH_NAME_B);
 
       console.log(
         `[INFO] data-boundary beforeAll: setup complete. ` +

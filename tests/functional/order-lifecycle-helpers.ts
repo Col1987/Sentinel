@@ -85,7 +85,7 @@ export async function verifyStatusPersisted(
 // site's own render, causing individual rows to hit their full 5s actionability timeout
 // one at a time. See the original diagnosis and proof in
 // tests/functional/cart-combinations-live.spec.ts (findOrderByEmail).
-async function waitForOrdersTableToSettle(page: Page, timeoutMs = 15_000): Promise<void> {
+export async function waitForOrdersTableToSettle(page: Page, timeoutMs = 15_000): Promise<void> {
   let lastCount = -1;
   let stableChecks = 0;
   const deadline = Date.now() + timeoutMs;

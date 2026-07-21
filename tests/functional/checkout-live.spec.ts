@@ -7,7 +7,7 @@ import {
   registerForCheckout, addPackAndGoToCheckout, fillConfigStep, advanceThroughDeliveryToPayment,
   runCheckoutFlow, completePayFastSandboxPayment, callCreatePayFastPayment, readOrderDocument,
 } from './checkout-helpers';
-import { findAndOpenOrderInAdmin } from './order-lifecycle-helpers';
+import { findAndOpenOrderInAdmin, waitForOrdersTableToSettle } from './order-lifecycle-helpers';
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
@@ -350,9 +350,11 @@ test.describe('Checkout flows (LIVE_MODE only)', { tag: ['@functional'] }, () =>
     console.log(`[INFO] checkout-order-appears-in-admin: checkout submitted for ${checkoutEmail}, switching to admin view`);
 
     await loginAsAdmin(page);
-    await page.waitForTimeout(2_000); // allow Firestore orders query to complete on admin page load
 
-    // Filter by customer name so only Sentinel QA test orders are visible
+    // Filter down to Sentinel-created rows BEFORE scanning, instead of scanning the full
+    // unfiltered table — requires the table's real (async-loaded) data to have settled
+    // first, or the filter is a silent no-op (see waitForOrdersTableToSettle).
+    await waitForOrdersTableToSettle(page);
     await page.locator('#filter-search').fill('SENTINEL CHECKOUT');
     await page.waitForTimeout(1_500);
 
@@ -371,7 +373,9 @@ test.describe('Checkout flows (LIVE_MODE only)', { tag: ['@functional'] }, () =>
       }
       if (!matchingRow) {
         await page.locator('#orders-refresh-btn').click();
-        await page.waitForTimeout(2_000);
+        await waitForOrdersTableToSettle(page);
+        await page.locator('#filter-search').fill('SENTINEL CHECKOUT');
+        await page.waitForTimeout(1_500);
       }
     }
 

@@ -6,6 +6,7 @@ import {
   registerForCheckout, addPackAndGoToCheckout, advanceThroughDeliveryToPayment,
   setDateField, dateFromCheckinBase,
 } from './checkout-helpers';
+import { waitForOrdersTableToSettle } from './order-lifecycle-helpers';
 
 const CF_PATTERN  = '**cloudfunctions.net**';
 const SIGN_UP_URL = '**/accounts:signUp**';
@@ -436,7 +437,7 @@ test.describe('Property variation and international registration', { tag: ['@fun
         'In LIVE_MODE: additionally completes payment and verifies the admin order modal shows the property name.',
     });
 
-    await registerForCheckout(page);
+    const checkoutEmail = await registerForCheckout(page);
     await page.evaluate((id: string) => (window as any).addToCart(id), PACK_ID);
     await page.waitForTimeout(600);
     await page.goto('/checkout.html', { waitUntil: 'domcontentloaded' });
@@ -524,16 +525,25 @@ test.describe('Property variation and international registration', { tag: ['@fun
     }
 
     if (!modalText) {
-      // Fallback: search by name prefix visible in every SENTINEL order
-      await page.locator('#filter-search').fill('SENTINEL').catch(() => {});
+      // Fallback: filter down by name BEFORE scanning, then scan for THIS test's own
+      // checkout email — do not assume row position. rows[0] was confirmed live
+      // (2026-07-21) to return an unrelated, weeks-old order, not the one just created —
+      // 'SENTINEL' alone matches every Sentinel-created order ever, and nothing guarantees
+      // newest-first ordering. Settle-wait first, or the filter is a silent no-op against
+      // the table's async-loaded placeholder data — see waitForOrdersTableToSettle.
+      await waitForOrdersTableToSettle(page);
+      await page.locator('#filter-search').fill('SENTINEL CHECKOUT').catch(() => {});
       await page.waitForTimeout(1_500);
       const rows = await page.locator('#orders-body tr').all();
-      // Most recent SENTINEL row is the one we just created
-      if (rows.length > 0) {
-        await rows[0].locator('button:has-text("View")').click();
-        await page.locator('#order-modal').waitFor({ state: 'visible', timeout: 8_000 }).catch(() => {});
-        await page.waitForTimeout(800);
-        modalText = (await page.locator('#order-modal').textContent().catch(() => '')) ?? '';
+      for (const row of rows) {
+        const rowText = await row.textContent().catch(() => '');
+        if (rowText?.includes(checkoutEmail)) {
+          await row.locator('button:has-text("View")').click();
+          await page.locator('#order-modal').waitFor({ state: 'visible', timeout: 8_000 }).catch(() => {});
+          await page.waitForTimeout(800);
+          modalText = (await page.locator('#order-modal').textContent().catch(() => '')) ?? '';
+          break;
+        }
       }
     }
 

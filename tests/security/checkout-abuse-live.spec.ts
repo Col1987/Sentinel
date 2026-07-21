@@ -5,6 +5,7 @@ import {
   ADDR, PACK_ID,
   registerForCheckout, addPackAndGoToCheckout, fillConfigStep, advanceThroughDeliveryToPayment,
 } from '../functional/checkout-helpers';
+import { waitForOrdersTableToSettle } from '../functional/order-lifecycle-helpers';
 
 const CF_PATTERN         = '**cloudfunctions.net**';
 const MANIPULATED_PRICE  = 1;   // R1.00 — absurdly low; detectable if CF trusts client value
@@ -255,7 +256,10 @@ async function verifyAdminOrderTotal(
   }
 
   if (!modalText) {
-    // Fallback: search by email
+    // Fallback: filter down by name BEFORE scanning (#filter-search matches customer name,
+    // not email — comment corrected). Requires the table's real (async-loaded) data to
+    // have settled first, or the filter is a silent no-op — see waitForOrdersTableToSettle.
+    await waitForOrdersTableToSettle(page);
     await page.locator('#filter-search').fill('SENTINEL CHECKOUT').catch(() => {});
     await page.waitForTimeout(1_500);
     const rows = await page.locator('#orders-body tr').all();
@@ -624,9 +628,11 @@ test.describe('Checkout abuse — price and quantity manipulation', { tag: ['@se
       }
     }
 
-    // Fewer order IDs than CF calls — verify admin to see actual records
+    // Fewer order IDs than CF calls — verify admin to see actual records.
+    // Settle-wait before filtering, same as verifyAdminOrderTotal above — #filter-search
+    // is a silent no-op against the table's async-loaded placeholder data.
     await loginAsAdmin(page);
-    await page.waitForTimeout(2_000);
+    await waitForOrdersTableToSettle(page);
     await page.locator('#filter-search').fill('SENTINEL CHECKOUT').catch(() => {});
     await page.waitForTimeout(1_500);
 

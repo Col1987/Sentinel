@@ -2,6 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { LIVE_MODE } from '../../src/config/sites';
 import { loginAsAdmin } from '../../src/utils/auth';
 import { PACK_LABEL, ADDR, GUEST, runCheckoutFlow } from './checkout-helpers';
+import { waitForOrdersTableToSettle } from './order-lifecycle-helpers';
 
 // Collection address must never be exposed to guests — reuse pattern from
 // tests/security/welcome-page.spec.ts
@@ -47,13 +48,24 @@ async function findAndOpenOrderInAdmin(
   await page.waitForTimeout(2_000);
 
   if (cfOrderId) {
-    await openOrderModal(page, cfOrderId);
-    const modalOrderId = await getModalOrderId(page);
-    if (modalOrderId) return modalOrderId;
-    await closeOrderModal(page);
+    try {
+      await openOrderModal(page, cfOrderId);
+      const modalOrderId = await getModalOrderId(page);
+      if (modalOrderId) return modalOrderId;
+      await closeOrderModal(page);
+    } catch {
+      // The direct-ID lookup can fail even when the underlying Firestore doc already
+      // exists and is fully correct — confirmed live (2026-07-21) that the admin order
+      // modal doesn't always become visible on direct-ID open. Matches the already-proven
+      // pattern in order-lifecycle-helpers.ts's findAndOpenOrderInAdmin: fall through to
+      // the search-and-retry loop below instead of letting this abort the whole lookup.
+    }
   }
 
-  // Fallback: search by customer name, scan rows for the checkout email
+  // Fallback: filter down by name BEFORE scanning, instead of scanning the full unfiltered
+  // table — requires the table's real (async-loaded) data to have settled first, or the
+  // filter is a silent no-op — see waitForOrdersTableToSettle.
+  await waitForOrdersTableToSettle(page);
   await page.locator('#filter-search').fill('SENTINEL CHECKOUT');
   await page.waitForTimeout(1_500);
 
@@ -70,7 +82,9 @@ async function findAndOpenOrderInAdmin(
       }
     }
     await page.locator('#orders-refresh-btn').click();
-    await page.waitForTimeout(2_000);
+    await waitForOrdersTableToSettle(page);
+    await page.locator('#filter-search').fill('SENTINEL CHECKOUT');
+    await page.waitForTimeout(1_500);
   }
 
   return null;
