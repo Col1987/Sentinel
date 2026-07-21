@@ -365,6 +365,8 @@ Reading `checkout.js` directly (fetched from the live site) confirmed why, and c
 
 This is a real, previously unknown, race condition in the site's own code — not Sentinel's. An actual customer who reaches checkout very quickly after registering, before their session's auth state has hydrated, is subject to the identical coin flip: the intended email-verification gate can be silently bypassed depending on page-load timing that has nothing to do with whether their email is actually verified. It also explains an earlier note in `my-account-live.spec.ts` that "checkout.html... does not block unverified accounts" — that finding wasn't wrong, it was one side of a race that hadn't been recognised as a race yet, observed under whatever timing happened to apply a week earlier.
 
+The strongest piece of evidence that this is genuinely a race, and not a fixed rule that just happened to look inconsistent, came from a single local run: `representative-checkout-completes` and `order-status-progression-and-email-trigger` both register a fresh, identically-unverified account through the same helper, moments apart, in the same test process. In that run, one hit the gate and the other didn't — same setup, same code, same machine, different outcome. That split is inconsistent with any theory involving a fixed rule, environment difference, or network condition; it's only consistent with a genuine timing race resolved independently on each page load.
+
 ### The fix
 
 Two distinct things needed fixing, and only one of them was Sentinel's to fix. The site-side race in `checkout.js` is the site owner's code and is out of scope here — reported as its own finding, not touched.

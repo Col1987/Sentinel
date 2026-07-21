@@ -65,6 +65,7 @@ Every LIVE_MODE test is written mode-agnostic by default: it asserts what it can
 - 19 JavaScript functions exposed globally on `window` (addToCart, handleLogin, goToCheckout, etc). Callable from the browser console by any visitor.
 - Admin dashboard HTML renders before Firebase auth resolves. Content is in the DOM behind the auth overlay before authentication completes.
 - **Admin order search uses substring/prefix matching, not exact-email scoping.** Searching for one customer's full email address also returns another customer's order when both email addresses share a common base string (e.g. both using the same Gmail account with different `+tag` aliases). An admin filtering for a specific customer may inadvertently see unrelated customers' orders in the results set.
+- **`checkout.html`'s email-verification gate has a race condition** — an unverified customer proceeding to checkout quickly after registration may bypass the intended verification requirement, depending on Firebase auth-state hydration timing on that page load. Discovered via a CI-only test failure investigation; confirmed via Playwright trace evidence, not assumed.
 
 **Accessibility:**
 - 24 WCAG AA colour contrast violations across the homepage.
