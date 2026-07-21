@@ -1,5 +1,6 @@
 import { type Page } from '@playwright/test';
 import { TEST_NAME_PREFIX, testEmail } from '../../src/config/sites';
+import { getLatestVerificationEmail } from '../../src/utils/gmail';
 
 export const PACK_ID           = 'wooden-whiskey';
 export const PACK_LABEL        = 'The Juel';
@@ -324,6 +325,54 @@ export async function runCheckoutFlow(
   options?: { wifiConfig?: { ssid: string; password: string } },
 ): Promise<{ checkoutEmail: string; orderId: string | null }> {
   const checkoutEmail = await registerForCheckout(page);
+  await addPackAndGoToCheckout(page);
+  await fillConfigStep(page, options?.wifiConfig);
+  await advanceThroughDeliveryToPayment(page);
+  const orderId = await submitPaymentAndCapture(page);
+
+  return { checkoutEmail, orderId };
+}
+
+// Same as runCheckoutFlow, but completes email verification before proceeding to checkout.
+// checkout.js's own auth-state check is racy: it polls auth.currentUser with an exit
+// condition (`user !== undefined`) that's satisfied almost immediately regardless of
+// whether Firebase's auth-state hydration has actually finished, so whether an unverified
+// account's session has hydrated by that first ~100ms tick nondeterministically decides
+// whether the "Verify Your Email" gate shows before the config form — see
+// docs/ENGINEERING_LOG.md (2026-07-20) for the full trace. A genuinely verified account
+// sidesteps the race entirely, since `!user.emailVerified` can never be true once
+// verification is real. Use this instead of runCheckoutFlow where deterministic checkout
+// behaviour matters; runCheckoutFlow's other call sites are unaffected by this change and
+// haven't been evaluated for the same fix — this is scoped to the two regression tests that
+// were seeing it, not a blanket replacement.
+export async function runVerifiedCheckoutFlow(
+  page: Page,
+  options?: { wifiConfig?: { ssid: string; password: string } },
+): Promise<{ checkoutEmail: string; orderId: string | null }> {
+  const sentAfter = new Date();
+  const checkoutEmail = await registerForCheckout(page);
+  const verificationLink = await getLatestVerificationEmail(sentAfter);
+  if (!verificationLink) {
+    throw new Error('runVerifiedCheckoutFlow: verification email did not arrive within 30s — cannot proceed with an unverified account.');
+  }
+  await page.goto(verificationLink, { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1_000);
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+
+  // registerForCheckout's own flow naturally spends several seconds on UI interaction
+  // (filling the registration form) before adding to cart, giving the async pack catalog
+  // (loadWelcomePacks() -> window.PRODUCTS) time to load. This fresh post-verification
+  // navigation has no equivalent built-in delay, so addToCart can run before the catalog
+  // has populated and silently fail to find the pack — same race already documented and
+  // fixed in my-account-live.spec.ts's checkoutAsVerifiedCustomer ("observed twice as a
+  // real race during discovery, not a one-off flake"). Wait for the catalog explicitly.
+  await page.waitForFunction(
+    () => typeof (window as any).addToCart === 'function'
+      && Array.isArray((window as any).PRODUCTS) && (window as any).PRODUCTS.length > 0,
+    undefined,
+    { timeout: 15_000 },
+  ).catch(() => {});
+
   await addPackAndGoToCheckout(page);
   await fillConfigStep(page, options?.wifiConfig);
   await advanceThroughDeliveryToPayment(page);

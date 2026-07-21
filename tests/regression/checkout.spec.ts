@@ -1,11 +1,18 @@
 import { test, expect } from '@playwright/test';
 import { LIVE_MODE } from '../../src/config/sites';
-import { PACK_LABEL, runCheckoutFlow } from '../functional/checkout-helpers';
+import { PACK_LABEL, runVerifiedCheckoutFlow } from '../functional/checkout-helpers';
 
-// One representative checkout — reuses runCheckoutFlow (single pack: PACK_ID = 'wooden-whiskey',
-// see checkout-helpers.ts) rather than the full all-packs/multi-item cart matrix covered in
-// tests/functional/cart-combinations-live.spec.ts. Per test-cost-awareness, this suite only
-// needs proof the checkout pipeline works end-to-end, not exhaustive per-pack coverage.
+// One representative checkout — reuses runVerifiedCheckoutFlow (single pack: PACK_ID =
+// 'wooden-whiskey', see checkout-helpers.ts) rather than the full all-packs/multi-item cart
+// matrix covered in tests/functional/cart-combinations-live.spec.ts. Per test-cost-awareness,
+// this suite only needs proof the checkout pipeline works end-to-end, not exhaustive
+// per-pack coverage.
+//
+// Uses the verified variant (not the plain runCheckoutFlow used elsewhere) because
+// checkout.js's own auth-state check races Firebase's session hydration for an unverified
+// account — see docs/ENGINEERING_LOG.md (2026-07-20). A verified account sidesteps the race
+// entirely. test.slow() (180s) already has comfortable headroom for the added ~30s-worst-case
+// verification poll.
 
 test.describe('Representative checkout', { tag: ['@regression'] }, () => {
 
@@ -17,10 +24,10 @@ test.describe('Representative checkout', { tag: ['@regression'] }, () => {
     test.slow();
     test.info().annotations.push({
       type: 'description',
-      description: `Registered a fresh account, added the '${PACK_LABEL}' welcome pack to the cart, completed checkout with test property and delivery data, and submitted payment. Confirms the checkout pipeline end-to-end without repeating the full pack/cart-combination matrix — that coverage lives in the functional suite.`,
+      description: `Registered and verified a fresh account, added the '${PACK_LABEL}' welcome pack to the cart, completed checkout with test property and delivery data, and submitted payment. Confirms the checkout pipeline end-to-end without repeating the full pack/cart-combination matrix — that coverage lives in the functional suite.`,
     });
 
-    const { checkoutEmail, orderId } = await runCheckoutFlow(page);
+    const { checkoutEmail, orderId } = await runVerifiedCheckoutFlow(page);
     console.log(`[INFO] representative-checkout-completes: checkout complete for ${checkoutEmail}, orderId=${orderId}`);
 
     const finalUrl = page.url();

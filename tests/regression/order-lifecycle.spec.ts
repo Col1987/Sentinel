@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { LIVE_MODE } from '../../src/config/sites';
 import { loginAsAdmin } from '../../src/utils/auth';
 import { getLatestOrderConfirmationEmail } from '../../src/utils/gmail';
-import { runCheckoutFlow } from '../functional/checkout-helpers';
+import { runVerifiedCheckoutFlow } from '../functional/checkout-helpers';
 import {
   getModalStatus, clickAdvanceStatus, verifyStatusPersisted, findAndOpenOrderInAdmin, STATUS_STAGES,
 } from '../functional/order-lifecycle-helpers';
@@ -19,16 +19,20 @@ test.describe('Order lifecycle', { tag: ['@regression'] }, () => {
   });
 
   test('order-status-progression-and-email-trigger — advancing an order two stages persists each transition and triggers the confirmation email', async ({ page }) => {
-    // Budget: register+checkout(~30s) + adminLogin(~10s) + findOrder(~2s typical, 30s worst case)
+    // Budget: register+verify+checkout(~57s worst case: register ~5s, verification-email
+    //   poll up to 30s, navigate back + checkout ~20s — see runVerifiedCheckoutFlow, used
+    //   instead of runCheckoutFlow because checkout.js races Firebase's auth-state
+    //   hydration for unverified accounts, see docs/ENGINEERING_LOG.md 2026-07-20)
+    //   + adminLogin(~10s) + findOrder(~2s typical, 30s worst case)
     //   + advance-to-Assembling(~3s) + persist-check(~2s) + email-poll(~60s worst case)
-    //   + advance-to-ReadyForCollection(~3s) + persist-check(~2s) ≈ 140s worst case.
+    //   + advance-to-ReadyForCollection(~3s) + persist-check(~2s) ≈ 167s worst case.
     test.setTimeout(240_000);
     test.info().annotations.push({
       type: 'description',
       description: "Creates a fresh order via the sandbox checkout, logs in as admin, and advances the order from Pending to Assembling — confirming both that the status persists in Firestore and that the customer confirmation email fires. Advances one further stage (Ready for Collection) to confirm the transition pipeline generalises beyond the first stage, without repeating the full five-stage walk covered in the functional suite.",
     });
 
-    const { checkoutEmail, orderId: cfOrderId } = await runCheckoutFlow(page);
+    const { checkoutEmail, orderId: cfOrderId } = await runVerifiedCheckoutFlow(page);
     console.log(`[INFO] order-status-progression-and-email-trigger: checkout complete for ${checkoutEmail}`);
 
     await loginAsAdmin(page);
