@@ -139,6 +139,17 @@ Checklist when a test is unexpectedly slow or timing out:
 
 Real example: get-started-scrolls-to-packs appeared to hang for 180 seconds. The actual cause was the waitForFunction argument-order bug silently disabling the 3-second scroll-detection wait immediately preceding the test's own assertion — a bug in the test's own code, not the shared loginAsAdmin() helper it also called (which, in the same trace, resolved in ~10 seconds and was not the source of the hang). Fixing that one call reduced the test to a clean 12-second failure, revealing a real site defect that had been sitting invisible behind an infrastructure symptom the whole time.
 
+### Setup-path resilience vs assertion-path fidelity
+
+This is a companion distinction to the section above, not an exception to it — it draws the line between "fix the infrastructure symptom" and "the failure itself is the thing being tested," so that line gets drawn consistently rather than re-litigated live under pressure each time a real-backend test flakes.
+
+A test has two structurally different parts. Its **setup path** is everything done purely to reach the state needed to test something (registering an account, logging in, waiting for a third-party SDK to connect). Its **assertion** is the actual real-backend behaviour LIVE_MODE exists to verify. These get different tolerance for retry:
+
+- **Setup path:** a known, well-documented, transient third-party infrastructure failure (e.g. a Firebase SDK's own WebChannel reconnection behavior, not a Sentinel or site bug) occurring during setup is a reasonable candidate for bounded, narrowly-scoped retry logic targeted at that specific known error signature. This is resilience, not mocking — it does not reduce what the test proves, because the thing being tested hasn't been reached yet. Any such retry must follow the same shape already proven elsewhere in this codebase (see fillPropertyField's retry-with-backoff in known-working-patterns): a small fixed attempt count, logged on every attempt via console.error/console.warn (never a silent `.catch(() => {})` per the test-cost-awareness rule below), and the final attempt still hard-fails if the retries are exhausted. Retrying blind or unbounded, or retrying without logging what was caught, is not this pattern.
+- **Assertion path:** the same tolerance must never be applied here. If LIVE_MODE testing exists specifically to verify real backend behaviour, that behaviour must stay fully real and unretried-away — a genuine failure on the assertion itself is a finding to report, not noise to smooth over.
+
+When in doubt about which category something falls into, ask: **if this were mocked or retried away, would the test still be proving what it claims to prove?** If yes, it's setup and bounded retry is fair game. If no, it's the assertion, and the failure must be allowed to surface as a real result.
+
 ### Code
 - Page Object Model for all page interactions. Every page gets a class in `src/pages/`
 - No hardcoded URLs. All target sites configured in `src/config/sites.ts`
