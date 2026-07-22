@@ -91,9 +91,13 @@ evidence overturned it: a Firestore WebChannel reconnection message that looked 
 cause of a multi-minute hang, when the actual cause was an unbounded `getAttribute()` call
 elsewhere in the same code path; and three consecutive nightly CI failures about to be
 documented as a known CI-only limitation, before a trace revealed a genuine site-side
-auth-state race condition. If you catch yourself about to write "environmental" anywhere
-permanent, treat that as the moment to get one more piece of real evidence, not the moment
-to close the investigation.
+auth-state race condition. A third case (`admin-order-lookup-reliability.spec.ts`, 22 July)
+looked like the same "same test, CI-only" shape at first glance — asking this question
+directly led straight to the test's account-setup code, which turned out to use unverified
+`registerForCheckout` instead of the already-proven `runVerifiedCheckoutFlow` fix, an
+ordinary authoring gap fixed in minutes with no environmental mystery at all. If you catch
+yourself about to write "environmental" anywhere permanent, treat that as the moment to get
+one more piece of real evidence, not the moment to close the investigation.
 
 ## 6. Debugging circuit breaker — stop after 2 failed live-patch attempts
 

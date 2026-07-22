@@ -129,6 +129,8 @@ A plausible-sounding external cause (network blip, CI resource constraints, thir
 
 This session found two real bugs that were nearly misattributed to "the environment" before evidence overturned that: a Firestore WebChannel reconnection message that looked like the cause of a multi-minute hang, but the actual cause was an unbounded getAttribute() call elsewhere in the same code path; and three consecutive nightly CI failures that were about to be documented as a known CI-only limitation, before a trace revealed a genuine site-side auth-state race condition.
 
+A third example, and the cheapest of the three to resolve: a newly-added test (`admin-order-lookup-reliability.spec.ts`, 22 July) failed consistently in CI while passing locally — on the surface, the same "same test, CI-only" shape as the original mystery. Applying this rule's own question directly ("what would I expect to see if this were NOT environmental") led straight to checking the test's account-setup pattern, which surfaced a straightforward, self-inflicted gap: the new test used unverified `registerForCheckout` instead of the already-proven `runVerifiedCheckoutFlow` fix from three nights earlier. Confirmed and fixed within minutes, with zero environmental mystery involved — the rule caught an ordinary authoring gap before it could be misattributed to CI flakiness a second time.
+
 If you catch yourself about to write "environmental" anywhere permanent, treat that as the exact moment to slow down and get one more piece of real evidence, not the moment to close the investigation.
 
 ### Test population must match the real-world scenario being tested
