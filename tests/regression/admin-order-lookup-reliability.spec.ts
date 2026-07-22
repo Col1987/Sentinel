@@ -1,10 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { LIVE_MODE, defaultSite } from '../../src/config/sites';
 import { loginAsAdmin } from '../../src/utils/auth';
-import {
-  ADDR, registerForCheckout, addPackAndGoToCheckout, fillConfigStep,
-  advanceThroughDeliveryToPayment, submitPaymentAndCapture,
-} from '../functional/checkout-helpers';
+import { ADDR, runVerifiedCheckoutFlow } from '../functional/checkout-helpers';
 import { waitForOrdersTableToSettle } from '../functional/order-lifecycle-helpers';
 
 // Regression protection specifically for the admin order-lookup/row-selection mechanism
@@ -21,7 +18,15 @@ import { waitForOrdersTableToSettle } from '../functional/order-lifecycle-helper
 //
 // One real order is created once in beforeAll and shared, on the same page/context, across
 // both tests below — they exercise two different lookup paths against that single order,
-// not two separate checkouts — to stay close to the ~90s budget for this whole file.
+// not two separate checkouts — to keep this file as lean as this mechanism allows.
+//
+// Uses runVerifiedCheckoutFlow (not plain registerForCheckout + the individual checkout
+// steps) — confirmed live (2026-07-22) that an unverified account here hits the exact same
+// checkout.js auth-state race documented in docs/ENGINEERING_LOG.md's July 20 entry:
+// #cfg-property failing all 5 fill retries, 3/3 CI attempts, because the config form never
+// renders behind an unresolved verification gate. The ~30s-worst-case verification poll
+// pushes beforeAll past the original ~90s-for-the-whole-file target — budget widened
+// honestly below rather than left silently tight.
 
 let sharedPage: Page;
 let checkoutEmail = '';
@@ -30,17 +35,17 @@ let orderId: string | null = null;
 test.describe('Admin order lookup reliability', { tag: ['@regression'] }, () => {
 
   test.beforeAll(async ({ browser }) => {
-    test.setTimeout(90_000);
+    // Budget: register+verify+checkout(~57s worst case, see runVerifiedCheckoutFlow) +
+    //   adminLogin(~10s) ≈ 67s worst case. 120s gives real headroom rather than a tight fit.
+    test.setTimeout(120_000);
     if (!LIVE_MODE) return; // tests below skip(!LIVE_MODE) — no real order to create
 
     const context = await browser.newContext({ baseURL: defaultSite.baseUrl });
     sharedPage = await context.newPage();
 
-    checkoutEmail = await registerForCheckout(sharedPage);
-    await addPackAndGoToCheckout(sharedPage);
-    await fillConfigStep(sharedPage);
-    await advanceThroughDeliveryToPayment(sharedPage);
-    orderId = await submitPaymentAndCapture(sharedPage);
+    const result = await runVerifiedCheckoutFlow(sharedPage);
+    checkoutEmail = result.checkoutEmail;
+    orderId = result.orderId;
     console.log(`[INFO] admin-order-lookup-reliability beforeAll: created order for ${checkoutEmail}, orderId=${orderId}`);
 
     await loginAsAdmin(sharedPage);
