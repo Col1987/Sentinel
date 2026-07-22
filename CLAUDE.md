@@ -119,6 +119,18 @@ This rule overrides any instruction to "keep trying" or "just one more fix" give
 
 Additionally: any test expected to take longer than 60 seconds must have that duration explicitly justified in a code comment before it is built, not discovered afterward. If a test's actual runtime exceeds its stated justification by more than 2×, that is itself a signal to stop and investigate before adding more timeout budget.
 
+### "Environmental" is a hypothesis, not a conclusion
+
+Never write "confirmed environmental," "known CI limitation," or similar language into a log entry, skip comment, commit message, or finding — as a terminal conclusion — without first answering explicitly: "What would I expect to see if this were NOT environmental, and have I actually ruled that out?"
+
+A plausible-sounding external cause (network blip, CI resource constraints, third-party SDK reconnection behavior) is a theory, not evidence, until one of the following is true:
+- A trace, log, or screenshot shows the actual mechanism directly (not inferred from a console message that happened to appear nearby)
+- The identical failure has been reproduced under genuinely independent conditions (different day, different account, different network path) in a way that rules out a code-level cause specifically
+
+This session found two real bugs that were nearly misattributed to "the environment" before evidence overturned that: a Firestore WebChannel reconnection message that looked like the cause of a multi-minute hang, but the actual cause was an unbounded getAttribute() call elsewhere in the same code path; and three consecutive nightly CI failures that were about to be documented as a known CI-only limitation, before a trace revealed a genuine site-side auth-state race condition.
+
+If you catch yourself about to write "environmental" anywhere permanent, treat that as the exact moment to slow down and get one more piece of real evidence, not the moment to close the investigation.
+
 ### Test population must match the real-world scenario being tested
 
 Before writing a test, confirm the account type/session/user state actually matches who would encounter this behaviour in reality — not whichever authenticated helper already exists and is convenient to call. Using loginAsAdmin() to test a customer-facing feature is a common trap: it's already built, it works, and it produces a plausible-looking pass or fail — but if a real admin would never be the one triggering that flow, the test is measuring the wrong population and its result proves nothing about the actual scenario.

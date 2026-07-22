@@ -1,6 +1,6 @@
 ---
 name: investigate-hang
-description: Use when a Sentinel test is unexpectedly slow, times out, or appears to hang, before proposing a fix. Covers checking for known infrastructure bug patterns (waitForFunction argument order, missing .catch() logging, page.evaluate() missing return, wrong-origin storage clears) before trusting or attributing the failure to genuine site behaviour, and enforces the debugging circuit breaker after 2 failed live-patch attempts.
+description: Use when a Sentinel test is unexpectedly slow, times out, or appears to hang, before proposing a fix. Covers checking for known infrastructure bug patterns (waitForFunction argument order, missing .catch() logging, page.evaluate() missing return, wrong-origin storage clears) before trusting or attributing the failure to genuine site behaviour, requires real evidence (trace/log showing the actual mechanism, or reproduction under independent conditions) before concluding a failure is "environmental" as a final answer, and enforces the debugging circuit breaker after 2 failed live-patch attempts.
 ---
 
 # Investigating a slow, timing-out, or hanging test
@@ -70,7 +70,32 @@ behaviour once known infrastructure causes have been checked and ruled out per s
 Skipping straight to "the site is just slow" or "this is a real defect" without doing that
 is not a supported conclusion.
 
-## 5. Debugging circuit breaker — stop after 2 failed live-patch attempts
+## 5. Before concluding "environmental," get evidence that actually shows it
+
+"Environmental," "known CI limitation," "confirmed environmental," and similar language are
+a hypothesis, not a conclusion — see CLAUDE.md's "'Environmental' is a hypothesis, not a
+conclusion." Before writing that verdict anywhere permanent (a log entry, a skip comment, a
+commit message, a finding), answer explicitly: what would this look like if it were NOT
+environmental, and have you actually ruled that out? A plausible-sounding external cause
+(network blip, CI resource constraints, a third-party SDK's own reconnection behavior) does
+not become evidence just because it's plausible and nearby in the logs. It needs one of:
+
+- A trace, log, or screenshot showing the actual mechanism directly — not inferred from a
+  console message that happened to appear near the failure.
+- The identical failure reproduced under genuinely independent conditions (different day,
+  different account, different network path) in a way that specifically rules out a
+  code-level cause.
+
+Two real bugs in this project were nearly misattributed to "the environment" this way before
+evidence overturned it: a Firestore WebChannel reconnection message that looked like the
+cause of a multi-minute hang, when the actual cause was an unbounded `getAttribute()` call
+elsewhere in the same code path; and three consecutive nightly CI failures about to be
+documented as a known CI-only limitation, before a trace revealed a genuine site-side
+auth-state race condition. If you catch yourself about to write "environmental" anywhere
+permanent, treat that as the moment to get one more piece of real evidence, not the moment
+to close the investigation.
+
+## 6. Debugging circuit breaker — stop after 2 failed live-patch attempts
 
 If a single test has required more than 2 consecutive live-debugging fixes in one session
 (patch → run → still broken → patch again) without reaching a clean pass, stop immediately.
