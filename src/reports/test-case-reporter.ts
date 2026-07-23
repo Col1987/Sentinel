@@ -7,7 +7,7 @@ import type {
   FullConfig,
   FullResult,
 } from '@playwright/test/reporter';
-import { RULE_GUIDANCE, getGuidance, INFRA_ISSUE_MARKER } from './sentinel-reporter';
+import { RULE_GUIDANCE, getGuidance, INFRA_ISSUE_MARKER, type Guidance } from './sentinel-reporter';
 
 // A second, standalone report: a deterministic, test-management-tool style Test Case
 // Report (Test ID / Scenario / Category / Steps / Expected / Actual / Status /
@@ -153,16 +153,102 @@ function deriveCategory(test: TestCase, description: string | undefined): { cate
   return { category: 'Functional', inferred: true };
 }
 
-// Only populated when there's a genuine, non-fabricated basis: a recognisable
-// [rule-id]-bracketed message this codebase already has fix guidance for — reusing
-// RULE_GUIDANCE/getGuidance from sentinel-reporter.ts directly, not a parallel copy — or
-// the Gmail-infrastructure case, whose remediation is already documented in
-// src/utils/gmail.ts's own error text. Anything else is left blank rather than guessed at.
-function deriveRemediation(errorMessage: string | undefined, isInfraIssue: boolean): string {
+// Two root-cause bugs each affect more than one test (not a single specific scenario),
+// so their Guidance object is shared across every currently-known-affected testId in
+// TEST_REMEDIATION below, rather than duplicated per entry.
+const CHECKOUT_AUTH_RACE_GUIDANCE: Guidance = {
+  why: 'checkout.js polls auth.currentUser with an exit condition that resolves almost ' +
+    'immediately regardless of whether Firebase\'s auth-state hydration has actually ' +
+    'finished, so an unverified account non-deterministically hits a "Verify Your Email" ' +
+    'gate instead of the checkout config form — see docs/ENGINEERING_LOG.md, July 20 and ' +
+    '22 entries.',
+  fix: 'Register through runVerifiedCheckoutFlow (tests/functional/checkout-helpers.ts) ' +
+    'instead of plain registerForCheckout plus the individual checkout steps — the same ' +
+    'fix already applied to the regression suite\'s checkout tests and ' +
+    'admin-order-lookup-reliability.spec.ts after they hit the identical race.',
+};
+
+const GMAIL_COLLISION_GUIDANCE: Guidance = {
+  why: 'getLatestVerificationEmail() (src/utils/gmail.ts) takes the most recent ' +
+    'verification email from the shared Gmail inbox without checking that its recipient ' +
+    'matches the account this specific test just registered — under a full-suite run, ' +
+    'another test\'s verification email can be consumed instead, leaving this test\'s own ' +
+    'account genuinely unverified.',
+  fix: 'Add a recipient-address check to getLatestVerificationEmail() — match the ' +
+    'message\'s To: header against the email this test registered before returning its ' +
+    'verification link, so a busy shared inbox can never hand one test another test\'s link.',
+};
+
+// Standing findings this project already knows about and has real fix guidance for,
+// matched by this report's own testId (see buildTestId) rather than a [rule-id] bracket —
+// genuine test assertion failures don't carry a rule-id the way auditor findings do.
+// Reuses the same Guidance shape as RULE_GUIDANCE for consistency; only .fix is shown in
+// this report's Remediation column, since there's no "why" section in this table format.
+const TEST_REMEDIATION: Record<string, Guidance> = {
+  'storefront__cart-remove-item-updates-total': {
+    why: 'Cart total display does not reset after removing the last item from the cart ' +
+      'drawer — the item-count badge correctly goes to 0, but the price total remains at ' +
+      'its pre-removal value.',
+    fix: 'Locate the cart-total DOM update logic and confirm it recalculates from the ' +
+      'current (now empty) cart array rather than only decrementing the previously ' +
+      'displayed value — likely a missing "cart is empty → reset total to R0" branch.',
+  },
+  'storefront__get-started-scrolls-to-packs': {
+    why: 'The "Get Started" button is a complete silent no-op for genuine authenticated ' +
+      'customers — no scroll, no navigation, no console error — despite ' +
+      'handleGetStarted()\'s own source confirming the correct branch (currentUser set, ' +
+      'emailVerified true) should call #gifts.scrollIntoView().',
+    fix: 'Add logging inside handleGetStarted()\'s verified-customer branch to confirm ' +
+      '#gifts exists in the DOM at the moment this handler runs, and check whether an ' +
+      'earlier exception in the same handler is silently aborting execution before the ' +
+      'scroll call ever fires.',
+  },
+  'admin-gaps-live__audit-log-records-admin-actions': {
+    why: 'Advancing an order\'s status — including via the Force/Override mechanism — ' +
+      'does not produce a corresponding Audit Log entry; only account-level events (user ' +
+      'creation, admin grants) are currently recorded.',
+    fix: 'Add an Audit Log write (timestamp + acting admin identity) to the same Cloud ' +
+      'Function or handler that processes an order status transition, matching the ' +
+      'pattern already used for account-level events.',
+  },
+  'console-injection__modify-dom-required': {
+    why: 'The demo booking form accepts an empty name submission once the HTML required ' +
+      'attribute is removed via DevTools — there is no JavaScript-level validation guard ' +
+      'in the submit handler backing up the HTML attribute.',
+    fix: 'Add an explicit non-empty check on the name field inside the form\'s own submit ' +
+      'handler, independent of the required HTML attribute, so a client-side DOM edit ' +
+      'cannot bypass validation entirely.',
+  },
+  'welcome-page-live__checkout-with-wifi-configured': CHECKOUT_AUTH_RACE_GUIDANCE,
+  'checkout-abuse-live__duplicate-order-idempotency': CHECKOUT_AUTH_RACE_GUIDANCE,
+  'my-account-live__my-properties-actual-behavior': GMAIL_COLLISION_GUIDANCE,
+  // File tag truncated to 24 chars by buildTestId ('welcome-page-content-live' is 25
+  // chars) — confirmed against a real generated report rather than assumed, since this
+  // truncation is easy to get wrong silently. The third key's title portion is also
+  // truncated: slugify() caps at 40 chars internally, and
+  // 'welcome-page-shows-restaurants-and-activities' is 46.
+  'welcome-page-content-liv__welcome-page-shows-house-rules': GMAIL_COLLISION_GUIDANCE,
+  'welcome-page-content-liv__welcome-page-shows-restaurants-and-activ': GMAIL_COLLISION_GUIDANCE,
+  'welcome-page-content-liv__welcome-page-shows-host-contact': GMAIL_COLLISION_GUIDANCE,
+};
+
+const NO_REMEDIATION_YET = 'Remediation not yet documented for this finding — see docs/JUELHAUS_TESTING_SUMMARY.md';
+
+// Checked in order of specificity: a Sentinel-side infrastructure marker first (this is
+// never a site defect regardless of what else the error text contains), then this exact
+// test's own entry in TEST_REMEDIATION, then a [rule-id]-bracketed auditor-style message
+// (reusing RULE_GUIDANCE/getGuidance directly, not a parallel copy). Only a genuine test
+// failure with none of the above falls through to the explicit placeholder — never a
+// silent blank, so missing guidance is visibly missing rather than looking resolved.
+function deriveRemediation(testId: string, errorMessage: string | undefined, isInfraIssue: boolean): string {
   if (!errorMessage) return '';
 
   if (isInfraIssue) {
     return 'Re-authorize Sentinel’s Gmail OAuth token — see the token refresh procedure referenced in src/utils/gmail.ts. This is a Sentinel test-infrastructure issue, not a defect in the site under test.';
+  }
+
+  if (testId in TEST_REMEDIATION) {
+    return TEST_REMEDIATION[testId].fix;
   }
 
   const m = errorMessage.match(/\[([a-z0-9-]+)\]/i);
@@ -170,7 +256,7 @@ function deriveRemediation(errorMessage: string | undefined, isInfraIssue: boole
     return getGuidance(`[${m[1]}]`).fix;
   }
 
-  return '';
+  return NO_REMEDIATION_YET;
 }
 
 // Expected-result extraction from a failure's error message: the first non-empty line,
@@ -394,12 +480,13 @@ class TestCaseReporter implements Reporter {
       actual = errorMessage ?? 'Test failed (no error message)';
     }
 
-    const remediation = status === 'Fail' ? deriveRemediation(errorMessage, isInfraIssue) : '';
+    const testId = buildTestId(test);
+    const remediation = status === 'Fail' ? deriveRemediation(testId, errorMessage, isInfraIssue) : '';
 
     const scenario = test.titlePath().slice(3).join(' › ') || test.title;
 
     this.records.push({
-      testId: buildTestId(test),
+      testId,
       scenario,
       category,
       categoryInferred,

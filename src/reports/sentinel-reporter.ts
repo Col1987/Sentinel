@@ -32,6 +32,21 @@ interface FindingRecord {
   project: string;
 }
 
+// Tags each raw AuditResult with the project that produced it, so the same auditor run
+// against the same site by more than one project (e.g. 'audit' and 'regression' both
+// running the accessibility auditor) can be detected and collapsed at display time.
+interface AuditResultWithProject extends AuditResult {
+  project: string;
+}
+
+// A single displayed auditor card, after collapsing duplicate auditor+targetUrl runs.
+// sourceProjects lists every distinct project that produced this exact auditor+URL
+// combination — length 1 for the normal case (nothing collapsed), length > 1 only when
+// genuine duplicates were found and merged into one card.
+interface DedupedAuditResult extends AuditResult {
+  sourceProjects: string[];
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 // Marks a thrown error as a Sentinel-side infrastructure problem (e.g. an expired Gmail
@@ -360,6 +375,37 @@ function groupByMessage(findings: AuditFinding[]): Map<string, AuditFinding[]> {
     else map.set(f.message, [f]);
   }
   return map;
+}
+
+// Collapses independent runs of the same auditor against the same target URL (e.g. the
+// 'audit' project and 'regression' project's audits-safe-mode.spec.ts both running the
+// accessibility auditor) into a single displayed card, rather than rendering — and
+// counting — the same findings twice. Grouping key is auditor+targetUrl only; a run that
+// appears exactly once for a given key passes through unchanged (sourceProjects.length
+// stays 1), so a single-project run is never affected by this collapsing.
+//
+// The representative chosen for each group is the one with the MOST findings, not simply
+// the first — if independent runs happened to catch a slightly different finding set (a
+// transient issue one run hit and the other didn't), picking the most complete run avoids
+// silently under-reporting rather than risking a misleading "verified identical" merge.
+function dedupeAuditResults(results: AuditResultWithProject[]): DedupedAuditResult[] {
+  const groups = new Map<string, AuditResultWithProject[]>();
+  for (const r of results) {
+    const key = `${r.auditor}::${r.targetUrl}`;
+    const bucket = groups.get(key);
+    if (bucket) bucket.push(r);
+    else groups.set(key, [r]);
+  }
+
+  return [...groups.values()].map(bucket => {
+    const representative = bucket.reduce(
+      (best, r) => (r.findings.length > best.findings.length ? r : best),
+      bucket[0],
+    );
+    const sourceProjects = [...new Set(bucket.map(r => r.project))].sort();
+    const { project: _drop, ...rest } = representative;
+    return { ...rest, sourceProjects };
+  });
 }
 
 // ─── Section renderers ────────────────────────────────────────────────────────
@@ -702,7 +748,7 @@ function renderTestSection(tests: TestRecord[]): string {
   </section>`;
 }
 
-function renderAuditSection(auditResults: AuditResult[]): string {
+function renderAuditSection(auditResults: DedupedAuditResult[]): string {
   if (auditResults.length === 0) return '';
 
   const cards = auditResults.map(result => {
@@ -741,12 +787,21 @@ function renderAuditSection(auditResults: AuditResult[]): string {
         : 'card-fail';
 
     const desc = AUDITOR_DESCRIPTIONS[result.auditor];
+    // Only shown when this card actually collapsed more than one raw run — a
+    // single-project run leaves sourceProjects at length 1 and renders no note at all.
+    const confirmationNote = result.sourceProjects.length > 1
+      ? `<p class="auditor-confirmation">Confirmed via ${result.sourceProjects.length} independent runs (${escapeHtml(result.sourceProjects.join(', '))})</p>`
+      : '';
     const nameBlock = desc
       ? `<div class="auditor-name-block">
           <h3 class="auditor-name">${escapeHtml(result.auditor)}</h3>
           <p class="auditor-desc">${escapeHtml(desc)}</p>
+          ${confirmationNote}
         </div>`
-      : `<h3 class="auditor-name">${escapeHtml(result.auditor)}</h3>`;
+      : `<div class="auditor-name-block">
+          <h3 class="auditor-name">${escapeHtml(result.auditor)}</h3>
+          ${confirmationNote}
+        </div>`;
 
     return `<div class="auditor-card ${cardClass}">
       <div class="auditor-header">
@@ -932,6 +987,7 @@ body {
 .auditor-name-block { display: flex; flex-direction: column; gap: 0.2rem; }
 .auditor-name { font-size: 0.875rem; font-weight: 700; text-transform: capitalize; color: #0f172a; }
 .auditor-desc { font-size: 0.75rem; color: #64748b; line-height: 1.5; max-width: 52ch; }
+.auditor-confirmation { font-size: 0.7rem; color: #0284c7; font-weight: 600; margin-top: 0.15rem; }
 .status-badge { font-size: 0.6rem; font-weight: 700; padding: 0.25em 0.65em; border-radius: 9999px; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 0.1rem; }
 .status-pass { background: #dcfce7; color: #15803d; }
 .status-fail { background: #fee2e2; color: #b91c1c; }
@@ -1074,7 +1130,7 @@ table.risk-table tr:last-child td { border-bottom: none; }
 class SentinelReporter implements Reporter {
   private readonly tests: TestRecord[] = [];
   private readonly securityFindings: FindingRecord[] = [];
-  private readonly auditResults: AuditResult[] = [];
+  private readonly auditResults: AuditResultWithProject[] = [];
   private startTime = new Date();
   private baseUrl = '';
 
@@ -1110,7 +1166,7 @@ class SentinelReporter implements Reporter {
         try {
           const json = att.body?.toString('utf-8')
             ?? (att.path ? fs.readFileSync(att.path, 'utf-8') : null);
-          if (json) this.auditResults.push(JSON.parse(json) as AuditResult);
+          if (json) this.auditResults.push({ ...(JSON.parse(json) as AuditResult), project });
         } catch { /* skip malformed attachment */ }
       }
     }
@@ -1178,7 +1234,11 @@ class SentinelReporter implements Reporter {
   private buildHtml(ts: Date): string {
     const origin = extractOrigin(this.baseUrl);
     const humanDate = ts.toLocaleString('en-GB', { dateStyle: 'long', timeStyle: 'medium' });
-    const allAuditFindings = this.auditResults.flatMap(r => r.findings);
+    // Deduped once here — every downstream consumer (metric strip, exec summary, audit
+    // section) reads from this same collapsed set, so a finding is never counted or
+    // rendered twice just because two projects both ran the same auditor.
+    const dedupedAuditResults = dedupeAuditResults(this.auditResults);
+    const allAuditFindings = dedupedAuditResults.flatMap(r => r.findings);
     const totalTests = this.tests.length;
     const failedTests = this.tests.filter(t => t.status === 'failed' || t.status === 'timedOut').length;
 
@@ -1226,10 +1286,10 @@ class SentinelReporter implements Reporter {
   </header>
 
   ${renderMetricStrip(allAuditFindings, this.securityFindings)}
-  ${renderExecSummary(this.tests, this.auditResults, this.securityFindings, origin)}
+  ${renderExecSummary(this.tests, dedupedAuditResults, this.securityFindings, origin)}
   ${renderRiskCoverageSection(this.tests, this.securityFindings, RISK_MAP)}
   ${renderTestSection(this.tests)}
-  ${renderAuditSection(this.auditResults)}
+  ${renderAuditSection(dedupedAuditResults)}
   ${renderSecuritySection(this.securityFindings)}
 
   <footer class="report-footer">
